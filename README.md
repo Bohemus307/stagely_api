@@ -23,13 +23,13 @@ Before you embark on this thrilling journey of image comparison, make sure you h
 Clone this repository:
 
 ```bsh
-  git clone https://github.com/your-username/image-detective-api.git
+  git clone https://https://github.com/Bohemus307/stagely_api
 ```
 
 then...
 
 ```bsh
-cd image-detective-api
+cd stagely_api
 ```
 
 * Install dependencies:
