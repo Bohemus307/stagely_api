@@ -79,7 +79,7 @@ curl -X POST http://localhost:3000/compare \
 If successful, you'll get a response that looks something like this:
 
 ```bsh
-jsonCopy{
+{
   "addedObjects": [
     { "name": "Rubber Duck", "confidence": 99.9 }
   ],
