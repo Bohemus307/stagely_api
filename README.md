@@ -101,7 +101,9 @@ If you're getting unexpected results, double-check that your images are actually
 #### 🎉 Contributing
 
 Found a bug? Want to add a feature? Think you can make this README even funnier? We welcome contributions! Just fork the repo, make your changes, and submit a pull request. We promise to read it eventually.
-📜 License
+
+#### 📜 License
+
 This project is licensed under the "Please Don't Use This For Evil" license. We're not sure if that's a real license, but it sounds good, doesn't it?
 
 #### 🙏 Acknowledgements
