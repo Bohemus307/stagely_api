@@ -4,19 +4,19 @@ Welcome to the most exciting thing to happen to images since the invention of th
 
 ## 🚀 Features
 
-* Compare two images faster than you can say "Where's Waldo?"
-* Detect added objects (Did someone sneak a rubber duck into the scene?)
-* Spot removed objects (Where did that rubber duck go?)
-* Identify changed objects (Did the rubber duck get a makeover?)
+- Compare two images faster than you can say "Where's Waldo?"
+- Detect added objects (Did someone sneak a rubber duck into the scene?)
+- Spot removed objects (Where did that rubber duck go?)
+- Identify changed objects (Did the rubber duck get a makeover?)
 
 ### 🛠 Prerequisites
 
 Before you embark on this thrilling journey of image comparison, make sure you have:
 
-* Node.js (v18 or later) installed on your machine
-* An AWS account (Don't worry, Jeff Bezos won't personally come to your house)
-* AWS CLI configured with your credentials
-* A sense of humor (optional, but highly recommended)
+- Node.js (v18 or later) installed on your machine
+- An AWS account (Don't worry, Jeff Bezos won't personally come to your house)
+- AWS CLI configured with your credentials
+- A sense of humor (optional, but highly recommended)
 
 #### 🎬 Getting Started
 
@@ -32,7 +32,7 @@ then...
 cd stagely_api
 ```
 
-* Install dependencies:
+- Install dependencies:
 
 ```bsh
 npm install
@@ -40,14 +40,14 @@ npm install
 
 (Watch as your computer downloads half the internet)!!!!
 
-* And then set up your environment variables:
+- And then set up your environment variables:
 
 Create a .env file in the root directory and add the following:
 CopyS3_BUCKET_NAME=your-bucket-name
 AWS_REGION=your-preferred-region
 Replace your-bucket-name with your actual S3 bucket name, and your-preferred-region with your AWS region (e.g., "us-west-2"). If you're feeling adventurous, try "us-west-2024" and see what happens! (Spoiler: It won't work)
 
-* Start the server:
+- Start the server:
 
 ```bsh
   npm start
@@ -68,7 +68,7 @@ To compare two images, send a POST request to /compare with the following JSON b
 
 Replace path/to/source/image.jpg and path/to/target/image.jpg with the actual paths of your images in the S3 bucket.
 
-* Example using curl:
+- Example using curl:
 
 ```bsh
 curl -X POST http://localhost:3000/compare \
@@ -112,3 +112,9 @@ Thanks to AWS for providing services that make us feel both powerful and confuse
 Shoutout to all the rubber ducks out there. You know what you did.
 
 Remember, with great power comes great responsibility. Use this API wisely, and may your image comparisons be ever in your favor! 🖼️✨
+
+#### DOCKER baby
+
+M1 build: docker build -t stagely-api --platform linux/amd64 .
+
+M1 run: docker run -p 3000:3000 --platform linux/amd64 stagely-api

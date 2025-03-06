@@ -1,5 +1,4 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { Type } from "@sinclair/typebox";
 import {
   RekognitionClient,
   DetectLabelsCommand,
@@ -42,70 +41,118 @@ interface RoomComparisonResponse {
   processedTargetImage: string;
 }
 
+interface ErrorResponse {
+  error: string;
+}
+
+// Define your JSON schema for validation using Fastify's schema format
 const schema = {
-  body: Type.Object({
-    sourceImageUrl: Type.String(),
-    targetImageUrl: Type.String(),
-  }),
+  body: {
+    type: "object",
+    required: ["sourceImageUrl", "targetImageUrl"],
+    properties: {
+      sourceImageUrl: { type: "string" },
+      targetImageUrl: { type: "string" },
+    },
+  },
   response: {
-    200: Type.Object({
-      addedObjects: Type.Array(
-        Type.Object({
-          name: Type.String(),
-          confidence: Type.Number(),
-          boundingBox: Type.Object({
-            left: Type.Number(),
-            top: Type.Number(),
-            width: Type.Number(),
-            height: Type.Number(),
-          }),
-        })
-      ),
-      removedObjects: Type.Array(
-        Type.Object({
-          name: Type.String(),
-          confidence: Type.Number(),
-          boundingBox: Type.Object({
-            left: Type.Number(),
-            top: Type.Number(),
-            width: Type.Number(),
-            height: Type.Number(),
-          }),
-        })
-      ),
-      commonObjects: Type.Array(
-        Type.Object({
-          source: Type.Object({
-            name: Type.String(),
-            confidence: Type.Number(),
-            boundingBox: Type.Object({
-              left: Type.Number(),
-              top: Type.Number(),
-              width: Type.Number(),
-              height: Type.Number(),
-            }),
-          }),
-          target: Type.Object({
-            name: Type.String(),
-            confidence: Type.Number(),
-            boundingBox: Type.Object({
-              left: Type.Number(),
-              top: Type.Number(),
-              width: Type.Number(),
-              height: Type.Number(),
-            }),
-          }),
-        })
-      ),
-      processedSourceImage: Type.String(),
-      processedTargetImage: Type.String(),
-    }),
-    400: Type.Object({
-      error: Type.String(),
-    }),
-    500: Type.Object({
-      error: Type.String(),
-    }),
+    200: {
+      type: "object",
+      properties: {
+        addedObjects: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              confidence: { type: "number" },
+              boundingBox: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                  width: { type: "number" },
+                  height: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        removedObjects: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              confidence: { type: "number" },
+              boundingBox: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                  width: { type: "number" },
+                  height: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        commonObjects: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              source: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  confidence: { type: "number" },
+                  boundingBox: {
+                    type: "object",
+                    properties: {
+                      left: { type: "number" },
+                      top: { type: "number" },
+                      width: { type: "number" },
+                      height: { type: "number" },
+                    },
+                  },
+                },
+              },
+              target: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  confidence: { type: "number" },
+                  boundingBox: {
+                    type: "object",
+                    properties: {
+                      left: { type: "number" },
+                      top: { type: "number" },
+                      width: { type: "number" },
+                      height: { type: "number" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        processedSourceImage: { type: "string" },
+        processedTargetImage: { type: "string" },
+      },
+    },
+    400: {
+      type: "object",
+      properties: {
+        error: { type: "string" },
+      },
+    },
+    500: {
+      type: "object",
+      properties: {
+        error: { type: "string" },
+      },
+    },
   },
 };
 
@@ -142,7 +189,7 @@ function convertToDetectedObject(label: Label): DetectedObject {
 
 function compareRooms(
   sourceLabels: Label[],
-  targetLabels: Label[]
+  targetLabels: Label[],
 ): RoomComparisonResponse {
   const sourceObjects = sourceLabels.map(convertToDetectedObject);
   const targetObjects = targetLabels.map(convertToDetectedObject);
@@ -189,7 +236,7 @@ async function getImageFromUrl(url: string): Promise<Buffer> {
 async function drawBoundingBoxes(
   imageBuffer: Buffer,
   objects: DetectedObject[],
-  color: string
+  color: string,
 ): Promise<Buffer> {
   const image = sharp(imageBuffer);
   const metadata = await image.metadata();
@@ -220,7 +267,7 @@ async function drawBoundingBoxes(
           font-size="12"
           fill="${color}"
         >${obj.name}</text>
-      `
+      `,
         )
         .join("")}
     </svg>`;
@@ -233,13 +280,13 @@ async function drawBoundingBoxes(
 export default async function (fastify: FastifyInstance) {
   fastify.post<{
     Body: RoomComparisonRequest;
-    Reply: RoomComparisonResponse;
+    Reply: RoomComparisonResponse | ErrorResponse;
   }>(
     "/compare",
     { schema },
     async (
       request: FastifyRequest<{ Body: RoomComparisonRequest }>,
-      reply: FastifyReply
+      reply: FastifyReply,
     ) => {
       const { sourceImageUrl, targetImageUrl } = request.body;
 
@@ -263,7 +310,7 @@ export default async function (fastify: FastifyInstance) {
 
         const comparisonResult = compareRooms(
           sourceLabels.Labels || [],
-          targetLabels.Labels || []
+          targetLabels.Labels || [],
         );
 
         // Process source image
@@ -273,7 +320,7 @@ export default async function (fastify: FastifyInstance) {
             ...comparisonResult.commonObjects.map((obj) => obj.source),
             ...comparisonResult.removedObjects,
           ],
-          "red"
+          "red",
         );
 
         // Process target image
@@ -283,7 +330,7 @@ export default async function (fastify: FastifyInstance) {
             ...comparisonResult.commonObjects.map((obj) => obj.target),
             ...comparisonResult.addedObjects,
           ],
-          "green"
+          "green",
         );
 
         // Convert processed images to base64
@@ -302,7 +349,8 @@ export default async function (fastify: FastifyInstance) {
             error: "An unexpected error occurred while comparing rooms",
           });
         }
+        return { error: "Error processing request" };
       }
-    }
+    },
   );
 }
