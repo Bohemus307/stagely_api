@@ -13,7 +13,7 @@ Welcome to the most exciting thing to happen to images since the invention of th
 
 Before you embark on this thrilling journey of image comparison, make sure you have:
 
-* Node.js (v14 or later) installed on your machine
+* Node.js (v18 or later) installed on your machine
 * An AWS account (Don't worry, Jeff Bezos won't personally come to your house)
 * AWS CLI configured with your credentials
 * A sense of humor (optional, but highly recommended)
