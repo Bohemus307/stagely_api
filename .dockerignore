@@ -1,0 +1,108 @@
+# Version control files
+.git
+.gitignore
+.github
+.gitlab-ci.yml
+
+# Node.js files
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.npm
+.pnpm
+.yarn
+.yarnrc
+.yarnclean
+.pnpm-store
+pnpm-debug.log
+.pnpmfile.cjs
+
+# Environment and configuration
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.*
+config/env
+*.env.json
+
+# Build and development files
+dist
+build
+coverage
+.coverage
+.nyc_output
+.next
+.nuxt
+.cache
+.output
+.DS_Store
+
+# Documentation and other files
+docs
+README.md
+CHANGELOG.md
+LICENSE
+*.md
+*.MD
+
+# IDE and editor files
+.idea
+.vscode
+*.sublime-*
+*.swp
+*.swo
+.editorconfig
+.eslintrc*
+.prettierrc*
+.jshintrc
+.jscsrc
+
+# Test files
+__tests__
+test
+tests
+*.spec.js
+*.test.js
+jest.config.js
+
+# Docker related
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# AWS related
+aws-config.json
+.aws
+.elasticbeanstalk
+.ebextensions
+.ebignore
+
+# Logs
+logs
+*.log
+log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp
+temp
+.tmp
+.temp
+
+# Debug files
+.ndb
+.inspect
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

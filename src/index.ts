@@ -1,5 +1,4 @@
 import Fastify from "fastify";
-import { Type } from "@sinclair/typebox";
 import imageComparisonPlugin from "./plugins/imageComparisonPlugin";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
@@ -8,7 +7,6 @@ import compress from "@fastify/compress";
 import { createHash } from "crypto";
 import closeWithGrace from "close-with-grace";
 import { config } from "dotenv";
-import { FastifyRequest } from "fastify";
 
 // Define custom properties on FastifyRequest
 declare module "fastify" {
@@ -66,22 +64,22 @@ const server = Fastify({
   maxParamLength: 100, // Prevent excessive parameter length
 });
 
-// Store request start time for performance tracking
-server.decorateRequest("startTime", null);
-
 // Health check with additional information
 server.get(
   "/health",
   {
     schema: {
       response: {
-        200: Type.Object({
-          status: Type.String(),
-          message: Type.String(),
-          version: Type.String(),
-          timestamp: Type.String(),
-          requestId: Type.String(),
-        }),
+        200: {
+          type: "object",
+          properties: {
+            status: { type: "string" },
+            message: { type: "string" },
+            version: { type: "string" },
+            timestamp: { type: "string" },
+            requestId: { type: "string" },
+          },
+        },
       },
     },
   },
@@ -100,8 +98,17 @@ server.get(
       timestamp: new Date().toISOString(),
       requestId,
     };
-  }
+  },
 );
+
+// Define interface for error response
+interface ErrorResponse {
+  error: {
+    statusCode: number;
+    message: string;
+    stack?: string;
+  };
+}
 
 // Global error handler
 server.setErrorHandler((error, request, reply) => {
@@ -112,16 +119,21 @@ server.setErrorHandler((error, request, reply) => {
 
   const statusCode = error.statusCode || 500;
 
-  reply.status(statusCode).send({
+  const response: ErrorResponse = {
     error: {
       statusCode,
       message:
         isProduction && statusCode === 500
           ? "Internal Server Error"
           : error.message,
-      ...(isProduction ? {} : { stack: error.stack }),
     },
-  });
+  };
+
+  if (!isProduction) {
+    response.error.stack = error.stack;
+  }
+
+  reply.status(statusCode).send(response);
 });
 
 // Not found handler
@@ -212,7 +224,7 @@ const start = async () => {
     const address = server.server.address();
     const port = typeof address === "string" ? address : address?.port;
     server.log.info(
-      `Server listening on port ${port} in ${serverConfig.NODE_ENV} mode`
+      `Server listening on port ${port} in ${serverConfig.NODE_ENV} mode`,
     );
 
     // Graceful shutdown
