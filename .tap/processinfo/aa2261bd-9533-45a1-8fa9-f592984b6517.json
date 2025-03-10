@@ -1,5 +1,5 @@
 {
-  "date": "2025-03-10T15:54:15.824Z",
+  "date": "2025-03-10T16:07:36.562Z",
   "argv": [
     "/Users/oxbox/.nvm/versions/node/v20.15.1/bin/node",
     "/Users/oxbox/code/stagely_api/src/tests/properties.test.ts"
@@ -12,10 +12,10 @@
   ],
   "NODE_OPTIONS": "\"--import=file:///Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+processinfo@3.1.8/node_modules/@tapjs/processinfo/dist/esm/import.mjs\"",
   "cwd": "/Users/oxbox/code/stagely_api",
-  "pid": 4845,
-  "ppid": 4839,
+  "pid": 6645,
+  "ppid": 6632,
   "parent": null,
-  "uuid": "5fad2223-1fc8-4292-adf9-541602e97237",
+  "uuid": "aa2261bd-9533-45a1-8fa9-f592984b6517",
   "files": [
     "/Users/oxbox/code/stagely_api/src/tests/properties.test.ts",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+typescript@3.1.0_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1___3prdfl27bpvbpjocssdcozp4yy/node_modules/@tapjs/typescript/dist/esm/import.mjs",
@@ -30,8 +30,7 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/munge-mocks.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/resolve-mock-entry-point.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/service-key.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/call-site-like.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/require-resolve.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/is-windows.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-all-conditional-values.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-all-conditions.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-unique-condition-sets.js",
@@ -39,24 +38,25 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-all-local-imports.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-conditional-value.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-import.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/is-windows.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/parse.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/call-site-like.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/require-resolve.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-conditional-values-list.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/errors.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-named-exports-list.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-pkg.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-export.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/star-glob.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-path.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/file-exists.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/find-dep-package.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-pkg.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/star-glob.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-file-url.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-path.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-named-exports-list.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-export.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/parse.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-dependency-export.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-package-import.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/walk-up-path@4.0.0/node_modules/walk-up-path/dist/esm/index.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-json.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/index.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/find-star-match.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-json.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/index.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/glob.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/has-magic.js",
@@ -68,10 +68,10 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/path-scurry@2.0.0/node_modules/path-scurry/dist/esm/index.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/pattern.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/walker.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/brace-expressions.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minipass@7.1.2/node_modules/minipass/dist/esm/index.js",
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/processor.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/lru-cache@11.0.2/node_modules/lru-cache/dist/esm/index.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minipass@7.1.2/node_modules/minipass/dist/esm/index.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/brace-expressions.js",
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/processor.js",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/loader.mjs",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/hooks.mjs",
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/mock-service-client.js"
@@ -107,11 +107,8 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/dist/esm/service-key.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+mock@4.0.1_@tapjs+core@4.0.1_@types+node@22.13.9_react-dom@18.3.1_react@18.3.1__react@18.3.1_/node_modules/@tapjs/mock/src/service-key.ts"
     ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/call-site-like.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/call-site-like.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/require-resolve.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/require-resolve.ts"
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/is-windows.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/is-windows.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-all-conditional-values.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/get-all-conditional-values.ts"
@@ -134,11 +131,11 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-import.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/resolve-import.ts"
     ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/is-windows.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/is-windows.ts"
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/call-site-like.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/call-site-like.ts"
     ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/parse.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/parse.ts"
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/require-resolve.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/require-resolve.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-conditional-values-list.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/get-conditional-values-list.ts"
@@ -146,29 +143,32 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/errors.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/errors.ts"
     ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-named-exports-list.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/get-named-exports-list.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-pkg.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/read-pkg.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-export.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/resolve-export.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/star-glob.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/star-glob.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-path.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/to-path.ts"
-    ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/file-exists.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/file-exists.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/find-dep-package.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/find-dep-package.ts"
     ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-pkg.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/read-pkg.ts"
+    ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/star-glob.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/star-glob.ts"
+    ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-file-url.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/to-file-url.ts"
+    ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/to-path.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/to-path.ts"
+    ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/get-named-exports-list.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/get-named-exports-list.ts"
+    ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-export.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/resolve-export.ts"
+    ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/dist/esm/parse.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/@tapjs+stack@4.0.0/node_modules/@tapjs/stack/src/parse.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/resolve-dependency-export.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/resolve-dependency-export.ts"
@@ -179,14 +179,14 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/walk-up-path@4.0.0/node_modules/walk-up-path/dist/esm/index.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/walk-up-path@4.0.0/node_modules/walk-up-path/src/index.ts"
     ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-json.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/read-json.ts"
+    ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/index.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/src/index.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/find-star-match.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/find-star-match.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/dist/esm/read-json.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/resolve-import@2.0.0/node_modules/resolve-import/src/read-json.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/index.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/src/index.ts"
@@ -221,22 +221,22 @@
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/walker.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/src/walker.ts"
     ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/brace-expressions.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/src/brace-expressions.ts"
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/lru-cache@11.0.2/node_modules/lru-cache/dist/esm/index.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/lru-cache@11.0.2/node_modules/lru-cache/src/index.ts"
     ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minipass@7.1.2/node_modules/minipass/dist/esm/index.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minipass@7.1.2/node_modules/minipass/src/index.ts"
     ],
+    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/dist/esm/brace-expressions.js": [
+      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/minimatch@10.0.1/node_modules/minimatch/src/brace-expressions.ts"
+    ],
     "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/dist/esm/processor.js": [
       "/Users/oxbox/code/stagely_api/node_modules/.pnpm/glob@11.0.1/node_modules/glob/src/processor.ts"
-    ],
-    "/Users/oxbox/code/stagely_api/node_modules/.pnpm/lru-cache@11.0.2/node_modules/lru-cache/dist/esm/index.js": [
-      "/Users/oxbox/code/stagely_api/node_modules/.pnpm/lru-cache@11.0.2/node_modules/lru-cache/src/index.ts"
     ]
   },
-  "root": "5fad2223-1fc8-4292-adf9-541602e97237",
+  "root": "aa2261bd-9533-45a1-8fa9-f592984b6517",
   "externalID": "src/tests/properties.test.ts",
   "code": 0,
   "signal": null,
-  "runtime": 357.277291
+  "runtime": 448.930208
 }
