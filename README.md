@@ -35,7 +35,7 @@ cd stagely_api
 - Install dependencies:
 
 ```bsh
-npm install
+pnpm install
 ```
 
 (Watch as your computer downloads half the internet)!!!!
@@ -50,7 +50,7 @@ Replace your-bucket-name with your actual S3 bucket name, and your-preferred-reg
 - Start the server:
 
 ```bsh
-  npm start
+  pnpm start
 ```
 
 If everything goes well, you should see a message like "Server is running on <http://localhost:3000>". If not, well... did you remember to turn it on and off again?
@@ -115,6 +115,6 @@ Remember, with great power comes great responsibility. Use this API wisely, and 
 
 #### DOCKER baby
 
-M1 build: docker build -t stagely-api --platform linux/amd64 .
+Mac M1+ build: docker build -t stagely-api --platform linux/amd64 .
 
-M1 run: docker run -p 3000:3000 --platform linux/amd64 stagely-api
+Mac M1+ run: docker run -p 3000:3000 --platform linux/amd64 stagely-api

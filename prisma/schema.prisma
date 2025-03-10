@@ -1,0 +1,138 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums
+enum PropertyStatus {
+  Active
+  Maintenance
+  Archived
+}
+
+enum IncidentSeverity {
+  Low
+  Medium
+  High
+  Critical
+}
+
+enum IncidentStatus {
+  Open
+  In_Progress @map("In Progress")
+  Resolved
+  Closed
+}
+
+// Models
+model User {
+  id              Int         @id @default(autoincrement()) @map("user_id")
+  auth0Id         String      @unique @map("auth0_id")
+  email           String      @unique
+  firstName       String      @map("first_name")
+  lastName        String      @map("last_name")
+  phone           String?
+  role            String      @default("user")
+  profilePictureUrl String?   @map("profile_picture_url")
+  lastLogin       DateTime?   @map("last_login") @db.Timestamptz()
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime    @default(now()) @map("updated_at") @db.Timestamptz()
+  properties      Property[]
+
+  @@map("users")
+}
+
+model Property {
+  id               Int            @id @default(autoincrement()) @map("property_id")
+  userId           Int            @map("user_id")
+  address          String
+  city             String
+  state            String?
+  zipCode          String?        @map("zip_code")
+  country          String
+  latitude         Decimal        @db.Decimal(10, 7)
+  longitude        Decimal        @db.Decimal(10, 7)
+  status           PropertyStatus
+  incidentCount    Int            @default(0) @map("incident_count")
+  openIncidentCount Int           @default(0) @map("open_incident_count")
+  lastIncidentAt   DateTime?      @map("last_incident_at") @db.Timestamptz()
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime       @default(now()) @map("updated_at") @db.Timestamptz()
+  
+  // Relations
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images           PropertyImage[]
+  incidents        Incident[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([country, city])
+  @@index([updatedAt(sort: Desc)])
+  @@map("properties")
+}
+
+model PropertyImage {
+  id          Int      @id @default(autoincrement()) @map("image_id")
+  propertyId  Int      @map("property_id")
+  imageUrl    String   @map("image_url")
+  caption     String?
+  takenAt     DateTime @map("taken_at") @db.Timestamptz()
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz()
+  
+  // Relations
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([propertyId])
+  @@map("property_images")
+}
+
+model Incident {
+  id          Int              @id @default(autoincrement()) @map("incident_id")
+  propertyId  Int              @map("property_id")
+  incidentType String          @map("incident_type")
+  description String
+  reportedAt  DateTime         @map("reported_at") @db.Timestamptz()
+  resolvedAt  DateTime?        @map("resolved_at") @db.Timestamptz()
+  severity    IncidentSeverity
+  status      IncidentStatus   @default(Open)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime         @default(now()) @map("updated_at") @db.Timestamptz()
+  
+  // Relations
+  property    Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  images      IncidentImage[]
+
+  @@index([propertyId])
+  @@index([status])
+  @@index([severity])
+  @@index([reportedAt(sort: Desc)])
+  @@index([incidentType, status])
+  @@map("incidents")
+}
+
+model IncidentImage {
+  id          Int      @id @default(autoincrement()) @map("image_id")
+  incidentId  Int      @map("incident_id")
+  imageUrl    String   @map("image_url")
+  caption     String?
+  takenAt     DateTime @map("taken_at") @db.Timestamptz()
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz()
+  
+  // Relations
+  incident    Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("incident_images")
+}

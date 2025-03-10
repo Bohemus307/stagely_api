@@ -1,5 +1,4 @@
 import Fastify from "fastify";
-import imageComparisonPlugin from "./plugins/imageComparisonPlugin";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
@@ -7,9 +6,15 @@ import compress from "@fastify/compress";
 import { createHash } from "crypto";
 import closeWithGrace from "close-with-grace";
 import { config } from "dotenv";
+import autoLoad from "@fastify/autoload";
+import path from "path";
+import { PrismaClient } from "@prisma/client";
 
 // Define custom properties on FastifyRequest
 declare module "fastify" {
+  export interface FastifyInstance {
+    prisma: PrismaClient;
+  }
   interface FastifyRequest {
     startTime: [number, number];
   }
@@ -189,7 +194,9 @@ server.register(compress, {
 });
 
 // Register your plugins
-server.register(imageComparisonPlugin);
+server.register(autoLoad, {
+  dir: path.join(__dirname, "plugins"),
+});
 
 // Start the server with graceful shutdown
 const start = async () => {
