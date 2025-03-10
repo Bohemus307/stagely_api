@@ -1,4 +1,3 @@
-// src/repositories/incident-repository.ts
 import {
   PrismaClient,
   Incident,
@@ -6,7 +5,6 @@ import {
   IncidentSeverity,
   Property,
   IncidentImage,
-  Prisma,
 } from "@prisma/client";
 
 // Define types for query parameters

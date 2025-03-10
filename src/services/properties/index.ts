@@ -20,9 +20,7 @@ export interface CreatePropertyInput
     | "incidentCount"
     | "openIncidentCount"
     | "lastIncidentAt"
-  > {
-  // Add any additional validation or optional fields
-}
+  > {}
 
 export interface UpdatePropertyInput
   extends Partial<
@@ -36,9 +34,7 @@ export interface UpdatePropertyInput
       | "openIncidentCount"
       | "lastIncidentAt"
     >
-  > {
-  // Add any additional validation or fields
-}
+  > {}
 
 /**
  * Service for property-related business logic

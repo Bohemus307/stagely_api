@@ -1,4 +1,3 @@
-// src/repositories/property-repository.ts
 import {
   PrismaClient,
   Property,
