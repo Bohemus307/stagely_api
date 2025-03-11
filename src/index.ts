@@ -3,14 +3,13 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
 import compress from "@fastify/compress";
-import { createHash } from "crypto";
 import closeWithGrace from "close-with-grace";
 import { config } from "dotenv";
 import autoLoad from "@fastify/autoload";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
+import healthPlugin from "./plugins/healthPlugin";
 
-// Define custom properties on FastifyRequest
 declare module "fastify" {
   export interface FastifyInstance {
     prisma: PrismaClient;
@@ -31,22 +30,6 @@ const serverConfig = {
   RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX || "100", 10),
 };
 
-const healthComments = [
-  "🦄 Unicorns are powering the servers today!",
-  "🍕 All systems operational, fueled by pizza!",
-  "🤖 Beep boop, all circuits functioning normally.",
-  "🧠 Our AI is feeling particularly clever right now.",
-  "🌈 Servers are riding on rainbows, everything's colorful!",
-  "🍪 Cookie-based load balancing is working perfectly.",
-  "🐒 Code monkeys are working overtime, all's well!",
-  "🎩 Our servers are feeling particularly dapper today.",
-  "🚀 Systems are go for launch! ...metaphorically speaking.",
-  "🧙‍♂️ Our wizard sysadmin cast 'Server Uptime Maximus'. It's super effective!",
-  "🦥 Servers are running so smoothly, they're practically in slow motion.",
-  "🌟 Star-powered quantum computing is online. Or maybe it's just really good coding.",
-];
-
-// Server creation with additional options
 const server = Fastify({
   logger: {
     level: serverConfig.NODE_ENV === "production" ? "info" : "debug",
@@ -69,44 +52,6 @@ const server = Fastify({
   maxParamLength: 100, // Prevent excessive parameter length
 });
 
-// Health check with additional information
-server.get(
-  "/health",
-  {
-    schema: {
-      response: {
-        200: {
-          type: "object",
-          properties: {
-            status: { type: "string" },
-            message: { type: "string" },
-            version: { type: "string" },
-            timestamp: { type: "string" },
-            requestId: { type: "string" },
-          },
-        },
-      },
-    },
-  },
-  async (request, reply) => {
-    const randomComment =
-      healthComments[Math.floor(Math.random() * healthComments.length)];
-    const requestId = createHash("sha256")
-      .update(request.id)
-      .digest("hex")
-      .substring(0, 8);
-
-    return {
-      status: "healthy",
-      message: randomComment,
-      version: process.env.npm_package_version || "1.0.0",
-      timestamp: new Date().toISOString(),
-      requestId,
-    };
-  },
-);
-
-// Define interface for error response
 interface ErrorResponse {
   error: {
     statusCode: number;
@@ -141,7 +86,6 @@ server.setErrorHandler((error, request, reply) => {
   reply.status(statusCode).send(response);
 });
 
-// Not found handler
 server.setNotFoundHandler((request, reply) => {
   reply.status(404).send({
     error: {
@@ -151,7 +95,6 @@ server.setNotFoundHandler((request, reply) => {
   });
 });
 
-// Security headers
 server.register(helmet, {
   contentSecurityPolicy: {
     directives: {
@@ -167,7 +110,6 @@ server.register(helmet, {
   },
 });
 
-// Rate limiting
 server.register(rateLimit, {
   max: serverConfig.RATE_LIMIT_MAX,
   timeWindow: "1 minute",
@@ -193,23 +135,77 @@ server.register(compress, {
   encodings: ["gzip", "deflate"],
 });
 
-// Register your plugins
-server.register(autoLoad, {
-  dir: path.join(__dirname, "plugins"),
+server.register(require("@fastify/swagger"), {
+  routePrefix: "/documentation",
+  swagger: {
+    info: {
+      title: "Stagely API",
+      description: "Property management API documentation",
+      version: "1.0.0",
+      contact: {
+        name: "API Support",
+        email: "support@example.com",
+        url: "https://example.com/support",
+      },
+    },
+    host: process.env.API_HOST || "localhost:3000",
+    schemes: ["http", "https"],
+    consumes: ["application/json"],
+    produces: ["application/json"],
+    tags: [
+      { name: "properties", description: "Property management endpoints" },
+      { name: "system", description: "System health and diagnostics" },
+      { name: "users", description: "Creation and management of users" },
+    ],
+    securityDefinitions: {
+      bearerAuth: {
+        type: "apiKey",
+        name: "Authorization",
+        in: "header",
+        description:
+          'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".',
+      },
+    },
+    security: [
+      {
+        bearerAuth: [],
+      },
+    ],
+    externalDocs: {
+      description: "Find more info here",
+      url: "https://example.com/api-docs",
+    },
+  },
+  exposeRoute: true,
 });
 
-// Start the server with graceful shutdown
+server.register(require("@fastify/swagger-ui"), {
+  routePrefix: "/documentation",
+  uiConfig: {
+    docExpansion: "list",
+    deepLinking: true,
+    displayRequestDuration: true,
+  },
+  staticCSP: true,
+  transformStaticCSP: (header: any) => header,
+});
+
+server.register(healthPlugin);
+
+server.register(autoLoad, {
+  dir: path.join(__dirname, "routes"),
+  dirNameRoutePrefix: true,
+});
+
 const start = async () => {
   try {
     // Add hooks for performance monitoring
     server.addHook("onRequest", (request, reply, done) => {
-      // Store the start time
       request.startTime = process.hrtime();
       done();
     });
 
     server.addHook("onResponse", (request, reply, done) => {
-      // TypeScript will infer the type automatically
       const hrtime = process.hrtime(request.startTime);
       const responseTime = hrtime[0] * 1e3 + hrtime[1] / 1e6;
       request.log.info({
@@ -227,14 +223,12 @@ const start = async () => {
       host: "0.0.0.0", // Listen on all network interfaces
     });
 
-    // Get address info
     const address = server.server.address();
     const port = typeof address === "string" ? address : address?.port;
     server.log.info(
       `Server listening on port ${port} in ${serverConfig.NODE_ENV} mode`,
     );
 
-    // Graceful shutdown
     closeWithGrace({ delay: 10000 }, async ({ signal, err, manual }) => {
       server.log.info(`Shutting down due to ${signal}`);
       await server.close();
@@ -245,10 +239,8 @@ const start = async () => {
   }
 };
 
-// Check if this file is being run directly
 if (require.main === module) {
   start();
 }
 
-// Export server and config for testing
 export { server, serverConfig, start };
