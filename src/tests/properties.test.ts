@@ -4,7 +4,7 @@ import tap from "tap";
 import { inject } from "light-my-request";
 
 // Set up colors for better console output
-const colors = {
+export const colors = {
   reset: "\x1b[0m",
   bright: "\x1b[1m",
   dim: "\x1b[2m",
@@ -16,7 +16,7 @@ const colors = {
 };
 
 // Helper function for pretty logging
-function logTest(title: string, response: any, extraInfo?: any) {
+export function logTest(title: string, response: any, extraInfo?: any) {
   console.log(
     `\n${colors.bright}${colors.cyan}Testing ${title}${colors.reset}`,
   );
