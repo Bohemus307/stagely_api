@@ -1,1 +1,43 @@
-pnpm exec lint-staged && pnpm run test
+#!/bin/bash
+
+# Function to run TypeScript checks
+run_ts_checks() {
+    echo "🕵️ Sherlock TypeScript is on the case..."
+    npx tsc --noEmit
+    return $?
+}
+
+# Run lint-staged
+echo "🧹 Time to sweep for lint! Don't worry, it's not the belly button kind..."
+npx lint-staged
+LINT_EXIT_CODE=$?
+
+# Run TypeScript checks in the root directory
+run_ts_checks
+ROOT_TS_EXIT_CODE=$?
+
+# Change to appserver directory and run the second test suite
+echo "🏃‍♂️ Sprinting to the appserver for more tests..."
+cd appserver
+pnpm test 
+SECOND_TEST_EXIT_CODE=$?
+
+# Run TypeScript checks in the appserver directory
+run_ts_checks
+APPSERVER_TS_EXIT_CODE=$?
+
+# Change back to the root directory
+cd ..
+
+# Determine the overall exit code
+if [ $FIRST_TEST_EXIT_CODE -ne 0 ] || 
+   [ $LINT_EXIT_CODE -ne 0 ] || 
+   [ $SECOND_TEST_EXIT_CODE -ne 0 ] ||
+   [ $ROOT_TS_EXIT_CODE -ne 0 ] ||
+   [ $APPSERVER_TS_EXIT_CODE -ne 0 ]; then
+    echo "💥 Oops! Looks like we've hit a bug-shaped iceberg. Time to patch the ship!"
+    exit 1
+else
+    echo "🎉 Woohoo! All systems are go. You're clear for commit-off, Captain!"
+    exit 0
+fi

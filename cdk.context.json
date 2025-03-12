@@ -1,0 +1,34 @@
+{
+  "availability-zones:account=891672395302:region=us-east-2": [
+    "us-east-2a",
+    "us-east-2b",
+    "us-east-2c"
+  ],
+  "availability-zones:account=891672395302:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "hosted-zone:account=891672395302:domainName=swolebrain.com:region=us-east-1": {
+    "Id": "/hostedzone/Z31BB1JUPLX7L0",
+    "Name": "swolebrain.com."
+  },
+  "acknowledged-issue-numbers": [
+    32775
+  ],
+  "availability-zones:account=337654367097:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "hosted-zone:account=337654367097:domainName=stoneandsage.dev:region=us-east-1": {
+    "Id": "/hostedzone/Z030182822ZM7ITV2KDZU",
+    "Name": "stoneandsage.dev."
+  }
+}
