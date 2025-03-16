@@ -157,11 +157,18 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         const user = await userService.getUserById(parseInt(id));
         return user;
-      } catch (err) {
+      } catch (err: any) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "User not found");
         }
-        throw err;
+        // Handle other error types explicitly
+        reply.code(500).send({
+          error: {
+            statusCode: 500,
+            message: `Server error: ${err.message || "Unknown error"}`,
+            type: err.constructor.name,
+          },
+        });
       }
     },
   });

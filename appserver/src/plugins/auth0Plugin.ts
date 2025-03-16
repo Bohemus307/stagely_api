@@ -35,7 +35,7 @@ export default fp(
         } = token;
         return getJwks.getPublicKey({
           kid,
-          domain: process.env.AUTH0_DOMAIN,
+          domain: `https://${process.env.AUTH0_DOMAIN}/`,
           alg,
         });
       },
@@ -49,8 +49,19 @@ export default fp(
     fastify.decorate(
       "authenticate",
       function (request: any, reply: any, done: any) {
-        request.jwtVerify((err: any) => {
+        console.log(
+          "Auth header:",
+          request.headers.authorization?.substring(0, 20) + "...",
+        );
+
+        request.jwtVerify((err: { message: any; stack: any; name: any }) => {
           if (err) {
+            console.error("JWT verification error details:", {
+              message: err.message,
+              stack: err.stack,
+              name: err.name,
+              // Add any other properties the error might have
+            });
             reply.code(401).send({ error: "Unauthorized" });
             return;
           }
