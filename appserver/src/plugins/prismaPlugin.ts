@@ -41,19 +41,17 @@ async function prismaPlugin(
   });
 
   try {
-    // Test connection
     await prisma.$connect();
     fastify.log.info("Connected to database");
   } catch (err) {
     fastify.log.error("Failed to connect to database", err);
-    throw err; // Let Fastify handle the error
+    throw err;
   }
 
-  // Make Prisma available through the Fastify instance
   fastify.decorate("prisma", prisma);
 }
 
 module.exports = fp(prismaPlugin, {
   name: "prisma",
-  fastify: "5.2.1", // Specify compatible Fastify version
+  fastify: "5.2.1",
 });

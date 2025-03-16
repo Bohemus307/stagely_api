@@ -16,17 +16,35 @@ export const PROD_SUBDOMAIN = 'api-stagely';
 export const RESOURCE_DEPLOYMENT_REGION = 'us-east-1'; // or chosen region from step 5
 
 // permissions your fargate task will have
+// permissions your fargate task will have
 export const taskExecutionIamPoliciesJSON = [
-    {
-        effect: iam.Effect.ALLOW,
-        resources: ['*'],
-        actions: [
-            "ecr:GetAuthorizationToken",
-            "ecr:BatchCheckLayerAvailability",
-            "ecr:GetDownloadUrlForLayer",
-            "ecr:BatchGetImage",
-            "logs:CreateLogStream",
-            "logs:PutLogEvents"
-        ]
-    }
+  {
+    effect: iam.Effect.ALLOW,
+    resources: ['*'],
+    actions: [
+      'logs:CreateLogStream',
+      'logs:PutLogEvents',
+      'ecr:GetAuthorizationToken',
+      'ecr:BatchCheckLayerAvailability',
+      'ecr:GetDownloadUrlForLayer',
+      'ecr:GetRepositoryPolicy',
+      'ecr:DescribeRepositories',
+      'ecr:ListImages',
+      'ecr:DescribeImages',
+      'ecr:BatchGetImage',
+      'ecr:GetLifecyclePolicy',
+      'ecr:GetLifecyclePolicyPreview',
+      'ecr:ListTagsForResource',
+      'ecr:DescribeImageScanFindings',
+      'ecr:InitiateLayerUpload',
+      'ecr:UploadLayerPart',
+      'ecr:CompleteLayerUpload',
+      'ecr:PutImage',
+      'secretsmanager:GetSecretValue',
+      'secretsmanager:DescribeSecret',
+      'rds:Connect',
+      'rds:ExecuteStatement',
+      'rds:CreateDBInstance',
+    ],
+  },
 ];

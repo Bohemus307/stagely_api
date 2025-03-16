@@ -3,78 +3,105 @@ import * as codebuild from "aws-cdk-lib/aws-codebuild";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as iam from "aws-cdk-lib/aws-iam";
-import { APP_NAME } from "./configuration";
 
+import { APP_NAME } from "./configuration";
+import { SSMParameterWrapper } from "./createSSMParameters";
+import { AppEnvironment } from "./ComputeStack";
+
+/**
+ * Interface for the return value of setupEcrAndCodeBuild function.
+ */
+export interface EcrCodeBuildSetup {
+  /** The created ECR repository. */
+  ecrRepo: ecr.Repository;
+  /** The created CodeBuild project. */
+  codebuildProject: codebuild.Project;
+}
+
+/**
+ * Sets up an ECR repository and a CodeBuild project.
+ *
+ * @param stack The CDK stack in which to define this construct.
+ * @param developCluster The ECS cluster for the development environment.
+ * @param stagingCluster The ECS cluster for the staging environment.
+ * @param prodCluster The ECS cluster for the production environment.
+ * @returns An object containing the ECR repository and CodeBuild project.
+ */
 export default function setupEcrAndCodeBuild(
   stack: cdk.Stack,
-  stagingCluster: ecs.Cluster,
-  prodCluster: ecs.Cluster
-) {
-  const ecrRepo = new ecr.Repository(stack, "EcrRepo");
+  cluster: ecs.Cluster,
+  appEnv: AppEnvironment,
+  ssmParams: {
+    [key: string]: SSMParameterWrapper;
+  }
+): EcrCodeBuildSetup {
+  // Create an ECR repository
+  const ecrRepo = new ecr.Repository(stack, `EcrRepo-Gateway-${appEnv}`);
 
-  // CodeBuild project with environment variables included directly
-  const codebuildProject = new codebuild.Project(stack, `${APP_NAME}`, {
-    projectName: `${stack.stackName}`,
-    environment: {
-      buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,
-    },
-    environmentVariables: {
-      ECR_REPO_URI: {
-        value: `${ecrRepo.repositoryUri}`,
+  // Create a CodeBuild project
+  const codebuildProject = new codebuild.Project(
+    stack,
+    `${APP_NAME}-CODEBUILD-PROJECT-${appEnv}`,
+    {
+      projectName: `${APP_NAME}-CODEBUILD-${appEnv}`,
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_4,
       },
-      // Add SSM paths here directly in the environmentVariables property
-      STAGING_ENV_PATH: {
-        value: `/${APP_NAME}/staging`,
-      },
-      PROD_ENV_PATH: {
-        value: `/${APP_NAME}/prod`,
-      },
-    },
-    buildSpec: codebuild.BuildSpec.fromObject({
-      version: "0.2",
-      phases: {
-        pre_build: {
-          commands: [
-            "env",
-            "export TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION}",
-            // Add commands to load params from SSM if needed in the build
-            "# Load environment variables from SSM for the appropriate environment",
-            'if [ "$DEPLOYMENT_ENV" = "prod" ]; then',
-            "  export ENV_PATH=$PROD_ENV_PATH",
-            "else",
-            "  export ENV_PATH=$STAGING_ENV_PATH",
-            "fi",
-          ],
-        },
-        build: {
-          commands: [
-            "docker login --username $DOCKERHUB_USERNAME --password $DOCKERHUB_PASSWORD",
-            "cd appserver",
-            "docker build -t $ECR_REPO_URI:$TAG --platform linux/amd64 .",
-            "$(aws ecr get-login --no-include-email)",
-            "docker push $ECR_REPO_URI:$TAG",
-          ],
-        },
-        post_build: {
-          commands: [
-            'echo "In Post-Build Stage"',
-            "cd ..",
-            // default container name is "web"
-            `printf '[{\"name\":\"web\",\"imageUri\":\"%s\"}]' $ECR_REPO_URI:$TAG > imagedefinitions.json`,
-            "pwd; ls -al; cat imagedefinitions.json",
-          ],
+      environmentVariables: {
+        // Map SSM parameters to environment variables
+        ...Object.fromEntries(
+          Object.entries(ssmParams).map(([name, param]) => [
+            name.split("/").pop()!.toUpperCase(),
+            {
+              type: codebuild.BuildEnvironmentVariableType.PARAMETER_STORE,
+              value: param.parameter.parameterName,
+            },
+          ])
+        ),
+        DOCKER_BUILDKIT: { value: "1" },
+        ECR_REPO_URI: {
+          value: `${ecrRepo.repositoryUri}`,
         },
       },
-      artifacts: {
-        files: ["imagedefinitions.json"],
-      },
-    }),
-  });
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: "0.2",
+        phases: {
+          pre_build: {
+            commands: [
+              "env",
+              "export TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION}",
+            ],
+          },
+          build: {
+            commands: [
+              "docker login --username $DOCKERHUB_USERNAME --password $DOCKERHUB_PASSWORD",
+              "cd appserver",
+              "docker build -t $ECR_REPO_URI:$TAG --platform linux/amd64 .",
+              "$(aws ecr get-login --no-include-email)",
+              "docker push $ECR_REPO_URI:$TAG",
+            ],
+          },
+          post_build: {
+            commands: [
+              'echo "In Post-Build Stage"',
+              "cd ..",
+              // default container name is "web"
+              `printf '[{"name":"web","imageUri":"%s"}]' $ECR_REPO_URI:$TAG > imagedefinitions.json`,
+              "pwd; ls -al; cat imagedefinitions.json",
+            ],
+          },
+        },
+        artifacts: {
+          files: ["imagedefinitions.json"],
+        },
+      }),
+    }
+  );
 
-  // Grant permissions
+  // Grant the CodeBuild project permissions to pull and push images to the ECR repository
   ecrRepo.grantPullPush(codebuildProject.role!);
 
-  // Add permissions for ECS clusters
+  // Add IAM policies to the CodeBuild project's role
   codebuildProject.addToRolePolicy(
     new iam.PolicyStatement({
       actions: [
@@ -83,24 +110,28 @@ export default function setupEcrAndCodeBuild(
         "ecr:BatchCheckLayerAvailability",
         "ecr:BatchGetImage",
         "ecr:GetDownloadUrlForLayer",
+        "ecr:GetRepositoryPolicy",
+        "ecr:DescribeRepositories",
+        "ecr:ListImages",
+        "ecr:DescribeImages",
+        "ecr:GetLifecyclePolicy",
+        "ecr:GetLifecyclePolicyPreview",
+        "ecr:ListTagsForResource",
+        "ecr:DescribeImageScanFindings",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
       ],
-      resources: [`${stagingCluster.clusterArn}`, `${prodCluster.clusterArn}`],
+      resources: [`${cluster.clusterArn}`],
     })
   );
 
-  // Add SSM permissions
+  // Grant permissions to access SSM parameters
   codebuildProject.addToRolePolicy(
     new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath",
-      ],
-      resources: [
-        `arn:aws:ssm:${stack.region}:${stack.account}:parameter/${APP_NAME}/staging/*`,
-        `arn:aws:ssm:${stack.region}:${stack.account}:parameter/${APP_NAME}/prod/*`,
-      ],
+      actions: ["ssm:GetParameter"],
+      resources: Object.values(ssmParams).map((param) => param.parameterArn),
     })
   );
 

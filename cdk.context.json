@@ -17,7 +17,8 @@
     "Name": "swolebrain.com."
   },
   "acknowledged-issue-numbers": [
-    32775
+    32775,
+    25358
   ],
   "availability-zones:account=337654367097:region=us-east-1": [
     "us-east-1a",

@@ -1,44 +1,86 @@
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
-import { ConfiguredFargateLoadBalancedApplicationWithSSL } from "./ConfiguredFargateLoadBalancedApplicationWithSSL";
+import { ConfiguredFargateGateway } from "./ConfiguredFargateLoadBalancedApplicationWithSSL";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as path from "path";
+import * as ssm from "aws-cdk-lib/aws-ssm";
+import { aws_certificatemanager as acm } from "aws-cdk-lib";
 import { HostedZone } from "aws-cdk-lib/aws-route53";
-import { DnsValidatedCertificate } from "aws-cdk-lib/aws-certificatemanager";
-
 import setupCodeBuild from "./setupCodeBuild";
 import setupPipeline from "./setupPipeline";
-import { PostgresRdsDatabase } from "./PostgresRDSDatabase";
 
 import {
   APP_NAME,
+  CODESTAR_CONNECTION_ARN,
+  GH_REPO_NAME,
   HOSTED_ZONE_ID,
   HOSTED_ZONE_NAME,
-  PROD_SUBDOMAIN,
-  RESOURCE_DEPLOYMENT_REGION,
   STAGING_SUBDOMAIN,
   taskExecutionIamPoliciesJSON,
 } from "./configuration";
-import { createSSMParamsFromEnvFile } from "./createSSMParameters";
+import createSSMParameters from "./createSSMParameters";
+
+/**
+ * Enum representing different application environments.
+ */
+export enum AppEnvironment {
+  // eslint-disable-next-line no-unused-vars
+  Develop = "develop",
+  // eslint-disable-next-line no-unused-vars
+  Staging = "staging",
+  // eslint-disable-next-line no-unused-vars
+  Production = "production",
+}
+
+// Add interface for ComputeStack props
+export interface ComputeStackProps extends cdk.StackProps {
+  vpc: ec2.IVpc;
+}
 
 export class ComputeStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
 
-    // Create SSM parameters from env files - super simple approach
-    createSSMParamsFromEnvFile(
-      this,
-      path.join(__dirname, "../.env"),
-      APP_NAME,
-      "staging"
-    );
+    const ssmParamsConfig = (appEnv: AppEnvironment) => {
+      return [
+        {
+          name: `/sdk/aws-access-key-id-${appEnv}`,
+          envKey: "ACCESS_KEY_ID",
+          description: `aws access key for ${appEnv}`,
+        },
+        {
+          name: `/sdk/aws-secret-access-key-id-${appEnv}`,
+          envKey: "SECRET_ACCESS_KEY",
+          description: `aws secret access key for ${appEnv}`,
+        },
+        {
+          name: `/dockerhub/username-${appEnv}`,
+          envKey: "DOCKERHUB_USERNAME",
+          description: `DockerHub username for ${appEnv}`,
+        },
+        {
+          name: `/dockerhub/access-token-${appEnv}`,
+          envKey: "DOCKERHUB_PASSWORD",
+          description: `DockerHub access token for ${appEnv}`,
+        },
+        {
+          name: `/prisma/dburl-${appEnv}`,
+          envKey: "DATABASE_URL",
+          description: `prisma db url ${appEnv}`,
+        },
+        {
+          name: `/s3/bucketname-${appEnv}`,
+          envKey: "S3_BUCKET_NAME",
+          description: `s3 bucket name for ${appEnv}`,
+        },
+      ];
+    };
 
-    createSSMParamsFromEnvFile(
+    // Create SSM parameters
+    const ssmParamsStaging = createSSMParameters(
       this,
-      path.join(__dirname, "../.env"),
-      APP_NAME,
-      "prod"
+      ssmParamsConfig(AppEnvironment.Staging),
+      AppEnvironment.Staging
     );
 
     // Rest of your existing code
@@ -51,50 +93,15 @@ export class ComputeStack extends cdk.Stack {
       }
     );
 
-    const certificate = new DnsValidatedCertificate(
-      this,
-      `${APP_NAME}-ACM-Certificate`,
-      {
-        domainName: `*.${HOSTED_ZONE_NAME}`,
-        hostedZone: hostedZone,
-        region: RESOURCE_DEPLOYMENT_REGION,
-      }
-    );
-
-    // Create VPCs
-    const stagingVpc = new ec2.Vpc(this, `${APP_NAME}-vpc-staging`, {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: "public",
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 24,
-          name: "isolated",
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-        },
-      ],
+    // Create an SSL certificate for the domains
+    const certificate = new acm.Certificate(this, "ComputeStackCertificates", {
+      domainName: `*.${HOSTED_ZONE_NAME}`,
+      validation: acm.CertificateValidation.fromDns(hostedZone),
     });
 
-    const prodVpc = new ec2.Vpc(this, `${APP_NAME}-vpc-prod`, {
-      maxAzs: 2,
-      natGateways: 0,
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: "public",
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 24,
-          name: "isolated",
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-        },
-      ],
-    });
+    // Import the VPC created by the database stack
+    // Use VPC from props or import it
+    const vpc: ec2.IVpc = props.vpc;
 
     const executionRolePolicy = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
@@ -109,132 +116,45 @@ export class ComputeStack extends cdk.Stack {
       ],
     });
 
-    const taskRolePolicies = taskExecutionIamPoliciesJSON.map(
-      (policyJson) => new iam.PolicyStatement(policyJson)
-    );
 
-    // Add SSM Parameter Access Policy
-    const stagingSSMAccessPolicy = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath",
-      ],
-      resources: [
-        `arn:aws:ssm:${this.region}:${this.account}:parameter/${APP_NAME}/staging/*`,
-      ],
-    });
+    const taskRolePolicies = [
+      ...taskExecutionIamPoliciesJSON.map(
+        (policyJson) => new iam.PolicyStatement(policyJson)
+      ),
+    ];
 
-    const prodSSMAccessPolicy = new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: [
-        "ssm:GetParameter",
-        "ssm:GetParameters",
-        "ssm:GetParametersByPath",
-      ],
-      resources: [
-        `arn:aws:ssm:${this.region}:${this.account}:parameter/${APP_NAME}/prod/*`,
-      ],
-    });
-
-    // Create Fargate apps with custom VPCs
-    const fargateAppStaging =
-      new ConfiguredFargateLoadBalancedApplicationWithSSL(
-        this,
-        `${APP_NAME}-staging`,
-        {
-          appEnv: "",
-          desiredCount: 1,
-          deploymentEnv: "staging",
-          hostedZone,
-          certificate,
-          maxCapacity: 1,
-          subDomain: STAGING_SUBDOMAIN,
-          executionRolePolicy,
-          taskRolePolicies,
-          vpc: stagingVpc,
-        }
-      );
-
-    const fargateAppProd = new ConfiguredFargateLoadBalancedApplicationWithSSL(
+    const fargateAppStaging = new ConfiguredFargateGateway(
       this,
-      `${APP_NAME}-prod`,
+      `${APP_NAME}-staging`,
       {
-        appEnv: "",
+        appEnv: "staging",
         desiredCount: 1,
-        deploymentEnv: "prod",
         hostedZone,
         certificate,
-        maxCapacity: 2,
-        subDomain: PROD_SUBDOMAIN,
+        maxCapacity: 1,
+        subDomain: STAGING_SUBDOMAIN,
         executionRolePolicy,
         taskRolePolicies,
-        vpc: prodVpc,
+        vpc: vpc,
+        ssmParameters: ssmParamsStaging,
       }
     );
 
-    // Add SSM access to task roles
-    fargateAppStaging.fargateService.taskDefinition.addToTaskRolePolicy(
-      stagingSSMAccessPolicy
-    );
-    fargateAppProd.fargateService.taskDefinition.addToTaskRolePolicy(
-      prodSSMAccessPolicy
-    );
-
-    // Add environment variable with path prefix so your app knows where to look
-    fargateAppStaging.fargateService.taskDefinition.defaultContainer?.addEnvironment(
-      "ENV_PATH",
-      `/${APP_NAME}/staging`
-    );
-
-    fargateAppProd.fargateService.taskDefinition.defaultContainer?.addEnvironment(
-      "ENV_PATH",
-      `/${APP_NAME}/prod`
-    );
-
-    new PostgresRdsDatabase(
-      this,
-      `${APP_NAME}-pg-staging`,
-      {
-        cluster: fargateAppStaging.cluster,
-        deploymentEnv: "staging",
-        appName: APP_NAME,
-        fargateService: fargateAppStaging.fargateService.service,
-        allocatedStorage: 20,
-        maxAllocatedStorage: 50,
-        deletionProtection: false,
-        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      }
-    );
-
-    new PostgresRdsDatabase(this, `${APP_NAME}-pg-prod`, {
-      cluster: fargateAppProd.cluster,
-      deploymentEnv: "prod",
-      appName: APP_NAME,
-      fargateService: fargateAppProd.fargateService.service,
-      allocatedStorage: 50,
-      maxAllocatedStorage: 200,
-      deletionProtection: true,
-      backupRetention: cdk.Duration.days(14),
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-    });
-
-    const { codebuildProject } = setupCodeBuild(
+    const codebuildGatewayStaging = setupCodeBuild(
       this,
       fargateAppStaging.cluster,
-      fargateAppProd.cluster
+      AppEnvironment.Staging,
+      ssmParamsStaging
     );
-
-    // Add SSM access to CodeBuild
-    codebuildProject.addToRolePolicy(stagingSSMAccessPolicy);
-    codebuildProject.addToRolePolicy(prodSSMAccessPolicy);
 
     setupPipeline(
       this,
-      codebuildProject,
+      codebuildGatewayStaging.codebuildProject,
       fargateAppStaging.fargateService.service,
-      fargateAppProd.fargateService.service
+      CODESTAR_CONNECTION_ARN,
+      APP_NAME,
+      GH_REPO_NAME,
+      AppEnvironment.Staging
     );
   }
 }

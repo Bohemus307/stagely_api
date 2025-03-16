@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
+    "prepare": "husky",
     "start": "ts-node appserver/src/index.ts",
     "dev": "ts-node-dev --respawn appserver/src/index.ts"
   },
@@ -32,12 +33,13 @@
   "dependencies": {
     "aws-cdk-lib": "2.39.0",
     "constructs": "^10.0.0",
+    "dotenv": "^16.4.7",
     "express": "^4.18.1",
     "lint-staged": "^15.5.0",
     "source-map-support": "^0.5.21"
   },
   "lint-staged": {
-    "appserver/src/**/*": "prettier --write --ignore-unknown"
+    "appserver/src/**/*": "npx prettier --write --ignore-unknown"
   },
   "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
 }
