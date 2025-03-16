@@ -9,6 +9,7 @@ import autoLoad from "@fastify/autoload";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import healthPlugin from "./plugins/healthPlugin";
+import auth0Plugin from "./plugins/auth0Plugin";
 
 declare module "fastify" {
   export interface FastifyInstance {
@@ -163,7 +164,7 @@ server.register(require("@fastify/swagger"), {
         name: "Authorization",
         in: "header",
         description:
-          'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".',
+          'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345"',
       },
     },
     security: [
@@ -171,10 +172,10 @@ server.register(require("@fastify/swagger"), {
         bearerAuth: [],
       },
     ],
-    externalDocs: {
-      description: "Find more info here",
-      url: "https://example.com/api-docs",
-    },
+    // externalDocs: {
+    //   description: "Find more info here",
+    //   url: "https://example.com/api-docs",
+    // },
   },
   exposeRoute: true,
 });
@@ -191,6 +192,7 @@ server.register(require("@fastify/swagger-ui"), {
 });
 
 server.register(healthPlugin);
+server.register(auth0Plugin);
 
 server.register(autoLoad, {
   dir: path.join(__dirname, "routes"),

@@ -3,7 +3,6 @@ import { PropertyStatus } from "@prisma/client";
 import { NotFoundError, UnauthorizedError } from "../../utils/errors";
 import { PropertyService } from "../../services/properties";
 import {
-  sendUnauthorized,
   sendNotFound,
   sendForbidden,
   sendConflict,
@@ -24,41 +23,6 @@ interface StatusUpdateBody {
   status: PropertyStatus;
 }
 
-// Define user JWT payload type
-interface JwtUser {
-  userId: number;
-  role: string;
-}
-
-// Declare jwt for fastify request
-declare module "fastify" {
-  interface FastifyRequest {
-    user: JwtUser;
-  }
-}
-
-/**
- * Simple JWT verification middleware
- */
-async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    // Your actual JWT verification logic would go here
-    // For example: await request.jwtVerify();
-
-    // If you don't have the jwtVerify method, you can check the authorization header manually:
-    const authHeader = request.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return sendUnauthorized(reply);
-    }
-
-    // Manually parse and verify the token
-    // This is just a placeholder, you should implement proper JWT verification
-    // request.user = { userId: 1, role: "admin" }; // Set from decoded token
-  } catch (err) {
-    return sendUnauthorized(reply);
-  }
-}
-
 /**
  * Property routes
  *
@@ -73,7 +37,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Get a list of properties with optional filtering",
@@ -113,28 +76,18 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             default: "desc",
             description: "Sort order (ascending or descending)",
           },
+          userId: {
+            type: "integer",
+            description: "Filter by user ID",
+          },
         },
       },
       response: {
         200: propertiesResponseSchema,
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
-
-      // If not admin, add filter to only show user's properties
-      const queryParams = { ...(request.query as object) };
-      if (!isAdmin) {
-        (queryParams as any).userId = userId;
-      }
-
-      const result = await propertyService.getProperties(queryParams as any);
+      const result = await propertyService.getProperties(request.query as any);
       return result;
     },
   });
@@ -143,7 +96,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/:id",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Get a single property by ID",
@@ -169,43 +121,23 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
 
       try {
+        // Temporarily passing a dummy userId and isAdmin flag
+        // These will be replaced with proper Auth0 authentication later
         const property = await propertyService.getPropertyById(
           parseInt(id),
-          userId,
-          isAdmin,
+          1, // temporary userId
+          true, // temporary isAdmin flag
         );
         return property;
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -216,7 +148,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "POST",
     url: "/",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Create a new property",
@@ -240,14 +171,10 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           },
         },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
+      // Temporary userId - will be replaced with Auth0 authentication
+      const userId = 1;
 
       try {
         const property = await propertyService.createProperty(
@@ -277,7 +204,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "PUT",
     url: "/:id",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Update an existing property",
@@ -304,29 +230,14 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
+
+      // Temporary values - will be replaced with Auth0 authentication
+      const userId = 1;
+      const isAdmin = true;
 
       try {
         const property = await propertyService.updateProperty(
@@ -341,9 +252,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
         }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
-        }
         throw err;
       }
     },
@@ -353,7 +261,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "PATCH",
     url: "/:id/status",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Update property status",
@@ -390,30 +297,15 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
       const { status } = request.body as StatusUpdateBody;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
+
+      // Temporary values - will be replaced with Auth0 authentication
+      const userId = 1;
+      const isAdmin = true;
 
       try {
         const property = await propertyService.changePropertyStatus(
@@ -428,9 +320,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
         }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
-        }
         throw err;
       }
     },
@@ -440,7 +329,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "DELETE",
     url: "/:id",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Delete a property",
@@ -472,29 +360,14 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
+
+      // Temporary values - will be replaced with Auth0 authentication
+      const userId = 1;
+      const isAdmin = true;
 
       try {
         await propertyService.deleteProperty(parseInt(id), userId, isAdmin);
@@ -503,9 +376,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -516,11 +386,20 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/stats",
-    onRequest: authenticate,
     schema: {
       tags: ["properties"],
       description: "Get statistics about user properties",
       summary: "Property statistics",
+      querystring: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "User ID to get statistics for",
+          },
+        },
+        required: ["userId"],
+      },
       response: {
         200: {
           type: "object",
@@ -545,15 +424,12 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           },
         },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
-      const stats = await propertyService.getUserPropertyStats(userId);
+      const { userId } = request.query as { userId: string };
+      const stats = await propertyService.getUserPropertyStats(
+        parseInt(userId),
+      );
       return stats;
     },
   });
