@@ -1,4 +1,4 @@
-import { PropertyStatus } from "@prisma/client";
+import { PropertyStatus, SpaceType } from "@prisma/client";
 
 // Base property schema with common properties
 const propertyBaseSchema = {
@@ -7,21 +7,13 @@ const propertyBaseSchema = {
     address: { type: "string" },
     city: { type: "string" },
     state: { type: "string" },
+    zipCode: { type: "string" },
     country: { type: "string" },
-    postalCode: { type: "string" },
-    description: { type: "string" },
-    propertyType: { type: "string" },
-    bedrooms: { type: "integer", minimum: 0 },
-    bathrooms: { type: "number", minimum: 0 },
-    squareFootage: { type: "number", minimum: 0 },
-    yearBuilt: { type: "integer" },
+    latitude: { type: "number", format: "float" },
+    longitude: { type: "number", format: "float" },
     status: {
       type: "string",
       enum: Object.values(PropertyStatus),
-    },
-    amenities: {
-      type: "array",
-      items: { type: "string" },
     },
   },
 };
@@ -29,7 +21,7 @@ const propertyBaseSchema = {
 // Schema for creating a new property
 export const createPropertySchema = {
   ...propertyBaseSchema,
-  required: ["address", "city", "country", "status"],
+  required: ["address", "city", "country", "latitude", "longitude", "status"],
   additionalProperties: false,
 };
 
@@ -39,31 +31,115 @@ export const updatePropertySchema = {
   additionalProperties: false,
 };
 
-// Schema for a single property response
-export const propertyResponseSchema = {
+// Schema for property space
+const propertySpaceSchema = {
   type: "object",
   properties: {
     id: { type: "integer" },
-    ...propertyBaseSchema.properties,
+    name: { type: "string" },
+    type: {
+      type: "string",
+      enum: Object.values(SpaceType),
+    },
+    aiGenerated: { type: "boolean" },
+    confidenceScore: { type: "number", format: "float" },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
-    ownerId: { type: "integer" },
-    owner: {
-      type: "object",
-      properties: {
-        id: { type: "integer" },
-        name: { type: "string" },
-        email: { type: "string" },
-      },
-    },
     images: {
       type: "array",
       items: {
         type: "object",
         properties: {
           id: { type: "integer" },
-          url: { type: "string" },
+          imageUrl: { type: "string" },
           caption: { type: "string" },
+          takenAt: { type: "string", format: "date-time" },
+        },
+      },
+    },
+  },
+};
+
+// Schema for inspection
+const inspectionSchema = {
+  type: "object",
+  properties: {
+    id: { type: "integer" },
+    title: { type: "string" },
+    description: { type: "string" },
+    inspectionDate: { type: "string", format: "date-time" },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+    photos: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          imageUrl: { type: "string" },
+          caption: { type: "string" },
+          takenAt: { type: "string", format: "date-time" },
+          spaceId: { type: "integer" },
+        },
+      },
+    },
+  },
+};
+
+// Schema for a single property response
+export const propertyResponseSchema = {
+  type: "object",
+  properties: {
+    id: { type: "integer" },
+    ...propertyBaseSchema.properties,
+    incidentCount: { type: "integer" },
+    openIncidentCount: { type: "integer" },
+    lastIncidentAt: { type: "string", format: "date-time" },
+    createdAt: { type: "string", format: "date-time" },
+    updatedAt: { type: "string", format: "date-time" },
+    userId: { type: "integer" },
+    user: {
+      type: "object",
+      properties: {
+        id: { type: "integer" },
+        firstName: { type: "string" },
+        lastName: { type: "string" },
+        email: { type: "string" },
+        phone: { type: "string" },
+        profilePictureUrl: { type: "string" },
+      },
+    },
+    spaces: {
+      type: "array",
+      items: propertySpaceSchema,
+    },
+    inspections: {
+      type: "array",
+      items: inspectionSchema,
+    },
+    incidents: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          incidentType: { type: "string" },
+          description: { type: "string" },
+          reportedAt: { type: "string", format: "date-time" },
+          resolvedAt: { type: "string", format: "date-time" },
+          severity: { type: "string" },
+          status: { type: "string" },
+          images: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                imageUrl: { type: "string" },
+                caption: { type: "string" },
+              },
+            },
+          },
         },
       },
     },
@@ -74,24 +150,54 @@ export const propertyResponseSchema = {
 export const propertiesResponseSchema = {
   type: "object",
   properties: {
-    properties: {
+    data: {
       type: "array",
-      items: propertyResponseSchema,
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          ...propertyBaseSchema.properties,
+          incidentCount: { type: "integer" },
+          openIncidentCount: { type: "integer" },
+          lastIncidentAt: { type: "string", format: "date-time" },
+          createdAt: { type: "string", format: "date-time" },
+          updatedAt: { type: "string", format: "date-time" },
+          userId: { type: "integer" },
+          user: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              firstName: { type: "string" },
+              lastName: { type: "string" },
+            },
+          },
+          spaces: {
+            type: "array",
+            items: propertySpaceSchema,
+          },
+          _count: {
+            type: "object",
+            properties: {
+              incidents: { type: "integer" },
+            },
+          },
+        },
+      },
     },
-    pagination: {
+    meta: {
       type: "object",
       properties: {
-        total: { type: "integer" },
         page: { type: "integer" },
         limit: { type: "integer" },
-        pages: { type: "integer" },
+        total: { type: "integer" },
+        totalPages: { type: "integer" },
       },
     },
   },
 };
 
 // Make sure these exports match what you're requiring in your properties.ts
-module.exports = {
+export default {
   createPropertySchema,
   updatePropertySchema,
   propertyResponseSchema,

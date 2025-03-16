@@ -128,6 +128,12 @@ export class IncidentRepository {
             orderBy: {
               createdAt: "desc",
             },
+            select: {
+              id: true,
+              imageUrl: true,
+              caption: true,
+              createdAt: true,
+            },
           },
         },
       }),
@@ -205,14 +211,22 @@ export class IncidentRepository {
 
       // Calculate property counter changes
       let openIncidentChange = 0;
+
+      // Based on the schema, In_Progress is mapped to "In Progress"
       if (
-        currentIncident.status === "Open" ||
-        currentIncident.status === "In_Progress"
+        currentIncident.status === IncidentStatus.Open ||
+        currentIncident.status === IncidentStatus.In_Progress
       ) {
-        if (status === "Resolved" || status === "Closed") {
+        if (
+          status === IncidentStatus.Resolved ||
+          status === IncidentStatus.Closed
+        ) {
           openIncidentChange = -1;
         }
-      } else if (status === "Open" || status === "In_Progress") {
+      } else if (
+        status === IncidentStatus.Open ||
+        status === IncidentStatus.In_Progress
+      ) {
         openIncidentChange = 1;
       }
 
@@ -222,7 +236,8 @@ export class IncidentRepository {
         data: {
           status,
           resolvedAt:
-            status === "Resolved" || status === "Closed"
+            status === IncidentStatus.Resolved ||
+            status === IncidentStatus.Closed
               ? resolvedAt || new Date()
               : null,
         },
@@ -257,7 +272,10 @@ export class IncidentRepository {
 
       // Calculate property counter changes
       const decrementOpen =
-        incident.status === "Open" || incident.status === "In_Progress" ? 1 : 0;
+        incident.status === IncidentStatus.Open ||
+        incident.status === IncidentStatus.In_Progress
+          ? 1
+          : 0;
 
       // Delete incident
       await tx.incident.delete({
@@ -283,10 +301,15 @@ export class IncidentRepository {
   async getIncidentStats(propertyId?: number): Promise<IncidentStats> {
     const where: any = propertyId ? { propertyId } : {};
 
+    // Get all possible status values directly from the enum
+    const statuses = Object.values(IncidentStatus);
+
+    // Get all possible severity values directly from the enum
+    const severities = Object.values(IncidentSeverity);
+
     // Using transactions to get all the data we need
     return this.prisma.$transaction(async (tx) => {
       // Get status counts
-      const statuses = Object.values(IncidentStatus);
       const statusCounts = await Promise.all(
         statuses.map((status) =>
           tx.incident.count({
@@ -299,7 +322,6 @@ export class IncidentRepository {
       );
 
       // Get severity counts
-      const severities = Object.values(IncidentSeverity);
       const severityCounts = await Promise.all(
         severities.map((severity) =>
           tx.incident.count({

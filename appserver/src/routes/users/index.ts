@@ -1,16 +1,7 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import {
-  NotFoundError,
-  UnauthorizedError,
-  ConflictError,
-} from "../../utils/errors";
+import { FastifyInstance } from "fastify";
+import { NotFoundError, ConflictError } from "../../utils/errors";
 import { UserService } from "../../services/users";
-import {
-  sendUnauthorized,
-  sendNotFound,
-  sendForbidden,
-  sendConflict,
-} from "../../utils/responses";
+import { sendNotFound, sendConflict } from "../../utils/responses";
 import userSchemas from "../../schemas/user-schema";
 
 // Define route parameter types
@@ -31,9 +22,10 @@ interface QueryParams {
 interface JwtUser {
   userId: number;
   role: string;
+  sub: string;
 }
 
-// Declare jwt for fastify request
+// Declare jwt for fastify request - this should match your Auth0 plugin
 declare module "fastify" {
   interface FastifyRequest {
     user: JwtUser;
@@ -49,44 +41,11 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
   const userService = new UserService(fastify.prisma);
 
-  /**
-   * Simple JWT verification middleware
-   */
-  async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-    try {
-      // Your actual JWT verification logic would go here
-      // For example: await request.jwtVerify();
-
-      // If you don't have the jwtVerify method, you can check the authorization header manually:
-      const authHeader = request.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return sendUnauthorized(reply);
-      }
-
-      // Manually parse and verify the token
-      // This is just a placeholder, you should implement proper JWT verification
-      // request.user = { userId: 1, role: "admin" }; // Set from decoded token
-    } catch (err) {
-      return sendUnauthorized(reply);
-    }
-  }
-
-  /**
-   * Admin-only middleware
-   */
-  async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
-    await authenticate(request, reply);
-
-    if (request.user?.role !== "admin") {
-      return sendForbidden(reply, "Admin access required");
-    }
-  }
-
   // GET /users
   fastify.route({
     method: "GET",
     url: "/",
-    onRequest: requireAdmin,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Get a list of users with optional filtering",
@@ -159,7 +118,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/:id",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Get a single user by ID",
@@ -185,18 +144,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
       security: [
         {
@@ -206,22 +153,22 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
-
-      // Only allow users to access their own profile or admins to access any profile
-      if (!isAdmin && parseInt(id) !== userId) {
-        return sendForbidden(reply, "Access denied");
-      }
 
       try {
         const user = await userService.getUserById(parseInt(id));
         return user;
-      } catch (err) {
+      } catch (err: any) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "User not found");
         }
-        throw err;
+        // Handle other error types explicitly
+        reply.code(500).send({
+          error: {
+            statusCode: 500,
+            message: `Server error: ${err.message || "Unknown error"}`,
+            type: err.constructor.name,
+          },
+        });
       }
     },
   });
@@ -230,7 +177,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/me",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Get current user profile",
@@ -245,10 +192,15 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       ],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
+      // Use the correct method name from your service
+      const authId = request.user.sub;
 
       try {
-        const user = await userService.getUserById(userId);
+        // Changed from getUserByAuthId to getUserByAuth0Id to match your service
+        const user = await userService.getUserByAuth0Id(authId);
+        if (!user) {
+          return sendNotFound(reply, "User not found");
+        }
         return user;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -263,7 +215,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "POST",
     url: "/",
-    onRequest: requireAdmin,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Create a new user",
@@ -316,7 +268,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "PUT",
     url: "/:id",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Update an existing user",
@@ -343,18 +295,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
         409: {
           type: "object",
           properties: {
@@ -376,23 +316,12 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
-
-      // Users can only update their own profile
-      // Admins can update any profile but only admins can set the role to "admin"
-      if (!isAdmin && parseInt(id) !== userId) {
-        return sendForbidden(reply, "Access denied");
-      }
-
-      // If not admin, prevent changing the role
-      const updateData = { ...(request.body as any) };
-      if (!isAdmin) {
-        delete updateData.role;
-      }
 
       try {
-        const user = await userService.updateUser(parseInt(id), updateData);
+        const user = await userService.updateUser(
+          parseInt(id),
+          request.body as any,
+        );
         return user;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -410,7 +339,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "DELETE",
     url: "/:id",
-    onRequest: requireAdmin,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Delete a user",
@@ -468,7 +397,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/search",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Search for users by name or email",
@@ -519,7 +448,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/stats",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate], // Use array syntax and onRequest
     schema: {
       tags: ["users"],
       description: "Get statistics about the current user",
@@ -534,6 +463,7 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       ],
     },
     handler: async (request, reply) => {
+      // Extract user ID from Auth0 token
       const userId = request.user.userId;
       const stats = await userService.getUserStats(userId);
       return stats;

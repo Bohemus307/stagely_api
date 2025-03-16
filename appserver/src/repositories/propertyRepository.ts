@@ -5,6 +5,8 @@ import {
   User,
   PropertyImage,
   Incident,
+  Inspection,
+  PropertySpace,
 } from "@prisma/client";
 
 // Define types for query parameters
@@ -33,7 +35,9 @@ export interface PaginatedResponse<T> {
 // Define property with included relations type
 export interface PropertyWithRelations extends Property {
   user: Pick<User, "id" | "firstName" | "lastName">;
-  images: PropertyImage[];
+  spaces: (PropertySpace & {
+    images: PropertyImage[];
+  })[];
   _count: {
     incidents: number;
   };
@@ -45,7 +49,12 @@ export interface PropertyWithFullRelations extends Property {
     User,
     "id" | "firstName" | "lastName" | "email" | "phone" | "profilePictureUrl"
   >;
-  images: PropertyImage[];
+  spaces: (PropertySpace & {
+    images: PropertyImage[];
+  })[];
+  inspections: (Inspection & {
+    photos: PropertyImage[];
+  })[];
   incidents: (Incident & {
     images: {
       id: number;
@@ -115,12 +124,17 @@ export class PropertyRepository {
               lastName: true,
             },
           },
-          // Only include the first 3 images for preview
-          images: {
-            take: 3,
-            orderBy: {
-              createdAt: "desc",
+          // Include spaces with their preview images
+          spaces: {
+            include: {
+              images: {
+                take: 3,
+                orderBy: {
+                  takenAt: "desc",
+                },
+              },
             },
+            take: 3, // Limit to 3 spaces for preview
           },
           _count: {
             select: {
@@ -160,7 +174,23 @@ export class PropertyRepository {
             profilePictureUrl: true,
           },
         },
-        images: true,
+        spaces: {
+          include: {
+            images: {
+              orderBy: {
+                takenAt: "desc",
+              },
+            },
+          },
+        },
+        inspections: {
+          orderBy: {
+            inspectionDate: "desc",
+          },
+          include: {
+            photos: true,
+          },
+        },
         incidents: {
           orderBy: {
             reportedAt: "desc",
