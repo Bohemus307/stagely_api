@@ -10,6 +10,7 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 import healthPlugin from "./plugins/healthPlugin";
 import auth0Plugin from "./plugins/auth0Plugin";
+import prismaPlugin from "./plugins/prismaPlugin";
 
 declare module "fastify" {
   export interface FastifyInstance {
@@ -190,7 +191,7 @@ server.register(require("@fastify/swagger-ui"), {
   staticCSP: true,
   transformStaticCSP: (header: any) => header,
 });
-
+server.register(prismaPlugin);
 server.register(healthPlugin);
 server.register(auth0Plugin);
 

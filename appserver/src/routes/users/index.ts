@@ -18,20 +18,6 @@ interface QueryParams {
   sortOrder?: string;
 }
 
-// Define user JWT payload type
-interface JwtUser {
-  userId: number;
-  role: string;
-  sub: string;
-}
-
-// Declare jwt for fastify request - this should match your Auth0 plugin
-declare module "fastify" {
-  interface FastifyRequest {
-    user: JwtUser;
-  }
-}
-
 /**
  * User routes
  *
@@ -157,18 +143,11 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         const user = await userService.getUserById(parseInt(id));
         return user;
-      } catch (err: any) {
+      } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "User not found");
         }
-        // Handle other error types explicitly
-        reply.code(500).send({
-          error: {
-            statusCode: 500,
-            message: `Server error: ${err.message || "Unknown error"}`,
-            type: err.constructor.name,
-          },
-        });
+        throw err;
       }
     },
   });
