@@ -73,6 +73,16 @@ export class ComputeStack extends cdk.Stack {
           envKey: "S3_BUCKET_NAME",
           description: `s3 bucket name for ${appEnv}`,
         },
+        {
+          name: `/auth0/audience-${appEnv}`,
+          envKey: "AUTH0_AUDIENCE",
+          description: `audience value for auth0 api ${appEnv}`,
+        },
+        {
+          name: `/auth0/domain-${appEnv}`,
+          envKey: "AUTH0_DOMAIN",
+          description: `auth0 domain value for ${appEnv}`,
+        },
       ];
     };
 
