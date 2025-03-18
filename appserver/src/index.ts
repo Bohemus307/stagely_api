@@ -9,12 +9,15 @@ import autoLoad from "@fastify/autoload";
 import path from "path";
 import { PrismaClient } from "@prisma/client";
 import healthPlugin from "./plugins/healthPlugin";
-import auth0Plugin from "./plugins/auth0Plugin";
 import prismaPlugin from "./plugins/prismaPlugin";
 
 declare module "fastify" {
   export interface FastifyInstance {
     prisma: PrismaClient;
+    authenticate: (
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ) => Promise<void>;
   }
   interface FastifyRequest {
     startTime: [number, number];
@@ -193,7 +196,17 @@ server.register(require("@fastify/swagger-ui"), {
 });
 server.register(prismaPlugin);
 server.register(healthPlugin);
-server.register(auth0Plugin);
+
+server.register(require("fastify-auth0-verify"), {
+  domain: process.env.AUTH0_DOMAIN || "",
+  audience: process.env.AUTH0_AUDIENCE || "",
+  // Optional configuration
+  secretsTtl: 600000, // Cache JWKs for 10 minutes (default)
+  jwtOptions: {
+    algorithms: ["RS256"], // Default algorithm used by Auth0
+    debug: true,
+  },
+});
 
 server.register(autoLoad, {
   dir: path.join(__dirname, "routes"),

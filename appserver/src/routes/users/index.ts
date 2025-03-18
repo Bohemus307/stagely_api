@@ -153,42 +153,42 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // GET /users/me
-  fastify.route({
-    method: "GET",
-    url: "/me",
-    onRequest: [fastify.authenticate], // Use array syntax and onRequest
-    schema: {
-      tags: ["users"],
-      description: "Get current user profile",
-      summary: "Get current user",
-      response: {
-        200: userSchemas.userResponseSchema,
-      },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
-    },
-    handler: async (request, reply) => {
-      // Use the correct method name from your service
-      const authId = request.user.sub;
+  // fastify.route({
+  //   method: "GET",
+  //   url: "/me",
+  //   onRequest: [fastify.authenticate], // Use array syntax and onRequest
+  //   schema: {
+  //     tags: ["users"],
+  //     description: "Get current user profile",
+  //     summary: "Get current user",
+  //     response: {
+  //       200: userSchemas.userResponseSchema,
+  //     },
+  //     security: [
+  //       {
+  //         bearerAuth: [],
+  //       },
+  //     ],
+  //   },
+  //   handler: async (request, reply) => {
+  //     // Use the correct method name from your service
+  //     const authId = request.user.sub;
 
-      try {
-        // Changed from getUserByAuthId to getUserByAuth0Id to match your service
-        const user = await userService.getUserByAuth0Id(authId);
-        if (!user) {
-          return sendNotFound(reply, "User not found");
-        }
-        return user;
-      } catch (err) {
-        if (err instanceof NotFoundError) {
-          return sendNotFound(reply, "User not found");
-        }
-        throw err;
-      }
-    },
-  });
+  //     try {
+  //       // Changed from getUserByAuthId to getUserByAuth0Id to match your service
+  //       const user = await userService.getUserByAuth0Id(authId);
+  //       if (!user) {
+  //         return sendNotFound(reply, "User not found");
+  //       }
+  //       return user;
+  //     } catch (err) {
+  //       if (err instanceof NotFoundError) {
+  //         return sendNotFound(reply, "User not found");
+  //       }
+  //       throw err;
+  //     }
+  //   },
+  // });
 
   // POST /users
   fastify.route({
@@ -424,30 +424,30 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // GET /users/stats
-  fastify.route({
-    method: "GET",
-    url: "/stats",
-    onRequest: [fastify.authenticate], // Use array syntax and onRequest
-    schema: {
-      tags: ["users"],
-      description: "Get statistics about the current user",
-      summary: "User statistics",
-      response: {
-        200: userSchemas.userStatsResponseSchema,
-      },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
-    },
-    handler: async (request, reply) => {
-      // Extract user ID from Auth0 token
-      const userId = request.user.userId;
-      const stats = await userService.getUserStats(userId);
-      return stats;
-    },
-  });
+  // fastify.route({
+  //   method: "GET",
+  //   url: "/stats",
+  //   onRequest: [fastify.authenticate], // Use array syntax and onRequest
+  //   schema: {
+  //     tags: ["users"],
+  //     description: "Get statistics about the current user",
+  //     summary: "User statistics",
+  //     response: {
+  //       200: userSchemas.userStatsResponseSchema,
+  //     },
+  //     security: [
+  //       {
+  //         bearerAuth: [],
+  //       },
+  //     ],
+  //   },
+  //   handler: async (request, reply) => {
+  //     // Extract user ID from Auth0 token
+  //     const userId = request.user.userId;
+  //     const stats = await userService.getUserStats(userId);
+  //     return stats;
+  //   },
+  // });
 }
 
 export default userRoutes;
