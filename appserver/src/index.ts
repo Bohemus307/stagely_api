@@ -198,7 +198,7 @@ server.register(prismaPlugin);
 server.register(healthPlugin);
 
 server.register(require("fastify-auth0-verify"), {
-  domain: `https://${process.env.AUTH0_DOMAIN || ""}`,
+  domain: `https://${process.env.AUTH0_DOMAIN || ""}/`,
   audience: process.env.AUTH0_AUDIENCE || "",
   // Optional configuration
   secretsTtl: 600000, // Cache JWKs for 10 minutes (default)
