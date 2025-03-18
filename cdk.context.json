@@ -31,5 +31,49 @@
   "hosted-zone:account=337654367097:domainName=stoneandsage.dev:region=us-east-1": {
     "Id": "/hostedzone/Z030182822ZM7ITV2KDZU",
     "Name": "stoneandsage.dev."
+  },
+  "vpc-provider:account=337654367097:filter.vpc-id=vpc-098964c5533f8a8b1:region=us-east-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-098964c5533f8a8b1",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "ownerAccountId": "337654367097",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-01d22954be08ac9b1",
+            "cidr": "10.0.0.0/18",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-004c9d469882fcded"
+          },
+          {
+            "subnetId": "subnet-06fcc1984e5482a85",
+            "cidr": "10.0.64.0/18",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-0c50614af03dc29cb"
+          }
+        ]
+      },
+      {
+        "name": "Private",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-0edb42f3626e68684",
+            "cidr": "10.0.128.0/18",
+            "availabilityZone": "us-east-1a",
+            "routeTableId": "rtb-0a4df6b02ae57c7d6"
+          },
+          {
+            "subnetId": "subnet-0491477b1818b64bb",
+            "cidr": "10.0.192.0/18",
+            "availabilityZone": "us-east-1b",
+            "routeTableId": "rtb-07dcb64c178dde487"
+          }
+        ]
+      }
+    ]
   }
 }
