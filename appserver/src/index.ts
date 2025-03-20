@@ -10,6 +10,8 @@ import path from "path";
 import { PrismaClient } from "@prisma/client";
 import healthPlugin from "./plugins/healthPlugin";
 import prismaPlugin from "./plugins/prismaPlugin";
+import fastifyJwt from "@fastify/jwt";
+import auth0Plugin from "./plugins/auth0Plugin";
 
 declare module "fastify" {
   export interface FastifyInstance {
@@ -33,6 +35,8 @@ const serverConfig = {
   NODE_ENV: process.env.NODE_ENV || "development",
   CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
   RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX || "100", 10),
+  DOMAIN: `${process.env.AUTH0_DOMAIN}`,
+  AUDIENCE: process.env.AUTH0_AUDIENCE,
 };
 
 const server = Fastify({
@@ -194,18 +198,19 @@ server.register(require("@fastify/swagger-ui"), {
   staticCSP: true,
   transformStaticCSP: (header: any) => header,
 });
+
 server.register(prismaPlugin);
 server.register(healthPlugin);
 
-server.register(require("fastify-auth0-verify"), {
-  domain: `https://${process.env.AUTH0_DOMAIN || ""}/`,
-  audience: process.env.AUTH0_AUDIENCE || "",
-  // Optional configuration
-  secretsTtl: 600000, // Cache JWKs for 10 minutes (default)
-  jwtOptions: {
-    algorithms: ["RS256"], // Default algorithm used by Auth0
-    debug: true,
-  },
+console.log("AUTH0 CONFIG:", {
+  domain: process.env.AUTH0_DOMAIN,
+  audience: process.env.AUTH0_AUDIENCE,
+  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
+});
+
+server.register(auth0Plugin, {
+  domain: serverConfig.DOMAIN,
+  audience: serverConfig.AUDIENCE as string,
 });
 
 server.register(autoLoad, {
