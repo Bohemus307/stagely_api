@@ -50,7 +50,7 @@ async function auth0Plugin(
         const issuer = decoded?.iss?.replace(/\/$/, "");
 
         if (!issuer || !issuer.includes(options.domain)) {
-          reply.code(403).send({ error: `Unauthorized issuer: ${issuer}` });
+          reply.code(403).send({ error: `Unauthorized issuer` });
           return;
         }
 

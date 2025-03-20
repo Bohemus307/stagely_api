@@ -12,7 +12,6 @@ interface ParamsWithId {
 interface QueryParams {
   page?: string;
   limit?: string;
-  role?: string;
   search?: string;
   sortBy?: string;
   sortOrder?: string;
@@ -52,11 +51,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
             default: 10,
             description: "Number of items per page",
           },
-          role: {
-            type: "string",
-            enum: ["user", "admin", "manager"],
-            description: "Filter by user role",
-          },
           search: {
             type: "string",
             description: "Search by name or email",
@@ -90,7 +84,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       const result = await userService.getUsers({
         page: queryParams.page ? parseInt(queryParams.page) : undefined,
         limit: queryParams.limit ? parseInt(queryParams.limit) : undefined,
-        role: queryParams.role,
         search: queryParams.search,
         sortBy: queryParams.sortBy,
         sortOrder: queryParams.sortOrder as "asc" | "desc" | undefined,

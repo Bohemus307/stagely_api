@@ -51,7 +51,6 @@ model User {
   firstName         String      @map("first_name")
   lastName          String      @map("last_name")
   phone             String?
-  role              String      @default("user")
   profilePictureUrl String?     @map("profile_picture_url")
   lastLogin         DateTime?   @map("last_login") @db.Timestamptz()
   createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz()

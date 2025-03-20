@@ -202,12 +202,6 @@ server.register(require("@fastify/swagger-ui"), {
 server.register(prismaPlugin);
 server.register(healthPlugin);
 
-console.log("AUTH0 CONFIG:", {
-  domain: process.env.AUTH0_DOMAIN,
-  audience: process.env.AUTH0_AUDIENCE,
-  jwksUri: `https://${process.env.AUTH0_DOMAIN}/.well-known/jwks.json`,
-});
-
 server.register(auth0Plugin, {
   domain: serverConfig.DOMAIN,
   audience: serverConfig.AUDIENCE as string,

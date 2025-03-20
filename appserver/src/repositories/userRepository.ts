@@ -4,7 +4,6 @@ import { PrismaClient, User, Property } from "@prisma/client";
 export interface UserQueryParams {
   page?: number;
   limit?: number;
-  role?: string;
   search?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
@@ -66,7 +65,6 @@ export class UserRepository {
   async getUsers({
     page = 1,
     limit = 10,
-    role,
     search,
     sortBy = "createdAt",
     sortOrder = "desc",
@@ -75,7 +73,6 @@ export class UserRepository {
 
     // Build where conditions
     const where: any = {};
-    if (role) where.role = role;
     if (search) {
       where.OR = [
         { firstName: { contains: search, mode: "insensitive" } },
