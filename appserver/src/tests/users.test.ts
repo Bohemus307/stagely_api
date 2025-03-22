@@ -5,7 +5,7 @@ import { inject } from "light-my-request";
 import { logTest } from "./properties.test";
 
 // Mock JWT user - we'll use this to simulate different user roles and IDs
-let mockJwtUser = { userId: 1, role: "admin" };
+let mockJwtUser = { userId: 1 };
 
 // Create a simple dispatch function that handles user routes
 const dispatch = function (
@@ -35,7 +35,6 @@ const dispatch = function (
       firstName: "Admin",
       lastName: "User",
       phone: "+1234567890",
-      role: "admin",
       profilePictureUrl: "https://example.com/admin.jpg",
       lastLogin: new Date().toISOString(),
       createdAt: new Date().toISOString(),
@@ -49,7 +48,6 @@ const dispatch = function (
       firstName: "Regular",
       lastName: "User",
       phone: "+0987654321",
-      role: "user",
       profilePictureUrl: null,
       lastLogin: new Date().toISOString(),
       createdAt: new Date().toISOString(),
@@ -115,20 +113,6 @@ const dispatch = function (
 
   // Handle routes
   if (method === "GET" && path === "/users") {
-    // GET /users - list all users (admin only)
-    if (mockJwtUser.role !== "admin") {
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: {
-            statusCode: 403,
-            message: "Admin access required",
-          },
-        }),
-      );
-      return;
-    }
-
     // Parse pagination, filters, etc.
     const page = parseInt(queryParams.page || "1");
     const limit = parseInt(queryParams.limit || "10");
@@ -142,13 +126,6 @@ const dispatch = function (
           user.email.toLowerCase().includes(search) ||
           user.firstName.toLowerCase().includes(search) ||
           user.lastName.toLowerCase().includes(search),
-      );
-    }
-
-    // Apply role filter if present
-    if (queryParams.role) {
-      filteredUsers = filteredUsers.filter(
-        (user) => user.role === queryParams.role,
       );
     }
 
@@ -184,7 +161,7 @@ const dispatch = function (
     }
 
     // Check if allowed to access (admin or own profile)
-    if (mockJwtUser.role !== "admin" && mockJwtUser.userId !== id) {
+    if (mockJwtUser.userId !== id) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -230,20 +207,6 @@ const dispatch = function (
       }),
     );
   } else if (method === "POST" && path === "/users") {
-    // POST /users - create a new user (admin only)
-    if (mockJwtUser.role !== "admin") {
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: {
-            statusCode: 403,
-            message: "Admin access required",
-          },
-        }),
-      );
-      return;
-    }
-
     let body = "";
 
     req.on("data", (chunk: Buffer) => {
@@ -312,7 +275,7 @@ const dispatch = function (
     }
 
     // Check if allowed to update (admin or own profile)
-    if (mockJwtUser.role !== "admin" && mockJwtUser.userId !== id) {
+    if (mockJwtUser.userId !== id) {
       res.writeHead(403, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -353,15 +316,6 @@ const dispatch = function (
           return;
         }
 
-        // Non-admins can't update role
-        if (
-          mockJwtUser.role !== "admin" &&
-          data.role &&
-          data.role !== mockUsers[userIndex].role
-        ) {
-          delete data.role;
-        }
-
         // Update user
         const updatedUser = {
           ...mockUsers[userIndex],
@@ -384,20 +338,6 @@ const dispatch = function (
       }
     });
   } else if (method === "DELETE" && path.match(/^\/users\/\d+$/)) {
-    // DELETE /users/:id - delete user (admin only)
-    if (mockJwtUser.role !== "admin") {
-      res.writeHead(403, { "Content-Type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: {
-            statusCode: 403,
-            message: "Admin access required",
-          },
-        }),
-      );
-      return;
-    }
-
     const id = parseInt(path.split("/")[2]);
 
     // Check if user exists
@@ -475,7 +415,7 @@ const dispatch = function (
 tap.test("User Routes", async (t) => {
   // Test GET /users as admin
   await t.test("GET /users (as admin)", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -483,7 +423,7 @@ tap.test("User Routes", async (t) => {
     });
 
     // Log the test results
-    logTest("GET /users (as admin)", response, {
+    logTest("GET /users", response, {
       "User count": JSON.parse(response.payload).data.length,
       "Has pagination": !!JSON.parse(response.payload).meta,
     });
@@ -495,35 +435,9 @@ tap.test("User Routes", async (t) => {
     t.ok(result.meta, "response should include pagination metadata");
   });
 
-  // Test GET /users as non-admin (should fail)
-  await t.test("GET /users (as regular user)", async (t) => {
-    mockJwtUser = { userId: 2, role: "user" };
-
-    const response = await inject(dispatch, {
-      method: "GET",
-      url: "/users",
-    });
-
-    // Log the test results
-    logTest("GET /users (as regular user)", response, {
-      "Expected to fail": true,
-      "Error message": JSON.parse(response.payload).error?.message,
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 403, "Status code should be 403 (Forbidden)");
-    const error = JSON.parse(response.payload).error;
-    t.equal(error.statusCode, 403, "Error should have status code 403");
-    t.equal(
-      error.message,
-      "Admin access required",
-      "Should return admin access required error",
-    );
-  });
-
   // Test GET /users with search
   await t.test("GET /users with search", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -552,7 +466,7 @@ tap.test("User Routes", async (t) => {
 
   // Test GET /users/:id (own profile)
   await t.test("GET /users/:id (own profile)", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -573,55 +487,9 @@ tap.test("User Routes", async (t) => {
     t.ok(Array.isArray(user.properties), "Should include properties array");
   });
 
-  // Test GET /users/:id (other user as admin)
-  await t.test("GET /users/:id (other user as admin)", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
-
-    const response = await inject(dispatch, {
-      method: "GET",
-      url: "/users/2",
-    });
-
-    // Log the test results
-    const user = JSON.parse(response.payload);
-    logTest("GET /users/2 (as admin)", response, {
-      "User email": user.email,
-      "User role": user.role,
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 200, "Status code should be 200");
-    t.equal(user.id, 2, "Should return user with ID 2");
-  });
-
-  // Test GET /users/:id (other user as regular user - should fail)
-  await t.test("GET /users/:id (unauthorized access)", async (t) => {
-    mockJwtUser = { userId: 2, role: "user" };
-
-    const response = await inject(dispatch, {
-      method: "GET",
-      url: "/users/1",
-    });
-
-    // Log the test results
-    logTest("GET /users/1 (as user 2)", response, {
-      "Expected to fail": true,
-      "Error message": JSON.parse(response.payload).error?.message,
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 403, "Status code should be 403 (Forbidden)");
-    const error = JSON.parse(response.payload).error;
-    t.equal(
-      error.message,
-      "Access denied",
-      "Should return access denied error",
-    );
-  });
-
   // Test GET /users/me
   await t.test("GET /users/me", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -644,7 +512,7 @@ tap.test("User Routes", async (t) => {
 
   // Test POST /users
   await t.test("POST /users", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const payload = {
       auth0Id: "auth0|345678",
@@ -652,7 +520,6 @@ tap.test("User Routes", async (t) => {
       firstName: "New",
       lastName: "User",
       phone: "+1122334455",
-      role: "user",
     };
 
     const response = await inject(dispatch, {
@@ -679,14 +546,13 @@ tap.test("User Routes", async (t) => {
 
   // Test POST /users (duplicate email)
   await t.test("POST /users with duplicate email", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const payload = {
       auth0Id: "auth0|unique123",
       email: "admin@example.com", // Already exists
       firstName: "Duplicate",
       lastName: "User",
-      role: "user",
     };
 
     const response = await inject(dispatch, {
@@ -716,7 +582,7 @@ tap.test("User Routes", async (t) => {
 
   // Test PUT /users/:id (own profile)
   await t.test("PUT /users/:id (own profile)", async (t) => {
-    mockJwtUser = { userId: 2, role: "user" };
+    mockJwtUser = { userId: 2 };
 
     const payload = {
       firstName: "Updated",
@@ -737,7 +603,6 @@ tap.test("User Routes", async (t) => {
     const updatedUser = JSON.parse(response.payload);
     logTest("PUT /users/2 (own profile)", response, {
       "Updated first name": updatedUser.firstName,
-      "Previous role preserved": updatedUser.role === "user",
     });
 
     // TAP assertions
@@ -746,44 +611,9 @@ tap.test("User Routes", async (t) => {
     t.equal(updatedUser.phone, "+0099887766", "Should update phone");
   });
 
-  // Test PUT /users/:id (attempt to change role as regular user)
-  await t.test("PUT /users/:id (attempt to change role)", async (t) => {
-    mockJwtUser = { userId: 2, role: "user" };
-
-    const payload = {
-      firstName: "Regular",
-      role: "admin", // Attempt to escalate privileges
-    };
-
-    const response = await inject(dispatch, {
-      method: "PUT",
-      url: "/users/2",
-      headers: {
-        "content-type": "application/json",
-      },
-      payload: JSON.stringify(payload),
-    });
-
-    // Log the test results
-    const updatedUser = JSON.parse(response.payload);
-    logTest("PUT /users/2 (attempt to change role)", response, {
-      "First name updated": updatedUser.firstName === "Regular",
-      "Role change blocked": updatedUser.role === "user",
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 200, "Status code should be 200");
-    t.equal(updatedUser.firstName, "Regular", "Should update first name");
-    t.equal(
-      updatedUser.role,
-      "user",
-      "Should not allow role change for non-admin",
-    );
-  });
-
   // Test DELETE /users/:id
   await t.test("DELETE /users/:id", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "DELETE",
@@ -803,34 +633,9 @@ tap.test("User Routes", async (t) => {
     t.equal(result.id, 2, "Should return deleted user ID");
   });
 
-  // Test DELETE /users/:id (as regular user - should fail)
-  await t.test("DELETE /users/:id (as regular user)", async (t) => {
-    mockJwtUser = { userId: 2, role: "user" };
-
-    const response = await inject(dispatch, {
-      method: "DELETE",
-      url: "/users/1",
-    });
-
-    // Log the test results
-    logTest("DELETE /users/1 (as regular user)", response, {
-      "Expected to fail": true,
-      "Error message": JSON.parse(response.payload).error?.message,
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 403, "Status code should be 403 (Forbidden)");
-    const error = JSON.parse(response.payload).error;
-    t.equal(
-      error.message,
-      "Admin access required",
-      "Should require admin access",
-    );
-  });
-
   // Test DELETE /users/:id (user not found)
   await t.test("DELETE /users/:id (not found)", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "DELETE",
@@ -855,7 +660,7 @@ tap.test("User Routes", async (t) => {
 
   // Test GET /users/search
   await t.test("GET /users/search", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -884,7 +689,7 @@ tap.test("User Routes", async (t) => {
 
   // Test GET /users/stats
   await t.test("GET /users/stats", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -933,7 +738,7 @@ tap.test("User Routes", async (t) => {
 
   // Test route not found
   await t.test("Route not found", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -958,7 +763,7 @@ tap.test("User Routes", async (t) => {
 
   // Test invalid JSON
   await t.test("Invalid JSON payload", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "POST",
@@ -987,7 +792,7 @@ tap.test("User Routes", async (t) => {
 
   // Test search with no query parameter
   await t.test("Search with no query parameter", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
+    mockJwtUser = { userId: 1 };
 
     const response = await inject(dispatch, {
       method: "GET",
@@ -1011,31 +816,5 @@ tap.test("User Routes", async (t) => {
       error.message.includes("query"),
       "Should mention query parameter in error",
     );
-  });
-
-  // Test GET /users with role filter
-  await t.test("GET /users with role filter", async (t) => {
-    mockJwtUser = { userId: 1, role: "admin" };
-
-    const response = await inject(dispatch, {
-      method: "GET",
-      url: "/users?role=user",
-    });
-
-    // Log the test results
-    const result = JSON.parse(response.payload);
-    const allUsersAreRegularUsers = result.data.every(
-      (user: any) => user.role === "user",
-    );
-
-    logTest("GET /users?role=user", response, {
-      "Results count": result.data.length,
-      "All results have user role": allUsersAreRegularUsers,
-    });
-
-    // TAP assertions
-    t.equal(response.statusCode, 200, "Status code should be 200");
-    t.ok(result.data.length > 0, "Should return at least one result");
-    t.ok(allUsersAreRegularUsers, "All results should have role = user");
   });
 });

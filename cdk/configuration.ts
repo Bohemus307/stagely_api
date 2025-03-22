@@ -15,6 +15,8 @@ export const PROD_SUBDOMAIN = 'api-stagely';
 // This region controls where your CDK resources are created and also separately controls where the ACM cert gets created.
 export const RESOURCE_DEPLOYMENT_REGION = 'us-east-1'; // or chosen region from step 5
 
+export const DB_VPC_ID = "vpc-098964c5533f8a8b1";
+
 // permissions your fargate task will have
 // permissions your fargate task will have
 export const taskExecutionIamPoliciesJSON = [
