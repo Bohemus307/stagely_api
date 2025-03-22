@@ -2,6 +2,8 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { auth } from "express-oauth2-jwt-bearer";
 import jwt from "jsonwebtoken";
+import { PrismaClient } from "@prisma/client";
+import { S3Client } from "@aws-sdk/client-s3";
 
 interface FastifyAuth0Options {
   domain: string;
@@ -77,7 +79,7 @@ async function auth0Plugin(
             } else {
               // Copy user info from mock request to Fastify request
               if (mockReq.auth && mockReq.auth.payload) {
-                request.authUser = mockReq.auth.payload;
+                request.user = mockReq.auth.payload;
               }
               resolve();
             }
@@ -107,6 +109,7 @@ async function auth0Plugin(
 // Add module augmentation for TypeScript to recognize our methods
 declare module "fastify" {
   interface FastifyInstance {
+    prisma: PrismaClient;
     authenticate: (
       request: FastifyRequest,
       reply: FastifyReply,
@@ -115,11 +118,17 @@ declare module "fastify" {
       request: FastifyRequest,
       reply: FastifyReply,
     ) => Promise<void>;
+    s3: {
+      client: S3Client;
+      bucket: string;
+      region: string;
+    };
   }
 
-  // Use authUser instead of user to avoid conflicts with @fastify/jwt
   interface FastifyRequest {
-    authUser?: {
+    startTime: [number, number];
+    user?: {
+      sub: string;
       [key: string]: any;
     };
   }
