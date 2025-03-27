@@ -31,8 +31,10 @@ interface QueryParams {
  * @param fastify - The Fastify instance
  */
 async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
-  // Get service instance with Prisma
-  const propertySpaceService = new PropertySpaceService(fastify.prisma);
+  const propertySpaceService = new PropertySpaceService(
+    fastify.prisma,
+    fastify.s3,
+  );
 
   // GET /property-spaces
   fastify.route({
@@ -278,6 +280,90 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
+        }
+        throw err;
+      }
+    },
+  });
+
+  // POST /property-spaces/classify-auto
+  fastify.route({
+    method: "POST",
+    url: "/classify-auto",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["property-spaces"],
+      description: "Create spaces and classify images automatically using AI",
+      summary: "Auto-create and classify spaces",
+      body: {
+        type: "object",
+        properties: {
+          propertyId: {
+            type: "integer",
+            description: "Property ID to associate spaces with",
+          },
+          imageIds: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Array of image IDs to classify",
+          },
+        },
+        required: ["propertyId", "imageIds"],
+      },
+      response: {
+        200: propertySpaceSchemas.multipleClassificationResponseSchema,
+        404: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 404 },
+                message: { type: "string", example: "Property not found" },
+              },
+            },
+          },
+        },
+        409: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 409 },
+                message: {
+                  type: "string",
+                  example: "Some images not found: 1, 2, 3",
+                },
+              },
+            },
+          },
+        },
+      },
+      security: [
+        {
+          bearerAuth: [],
+        },
+      ],
+    },
+    handler: async (request, reply) => {
+      const { propertyId, imageIds } = request.body as {
+        propertyId: number;
+        imageIds: number[];
+      };
+
+      try {
+        const results = await propertySpaceService.autoCreateAndClassifySpaces(
+          propertyId,
+          imageIds,
+        );
+        return results;
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, err.message);
+        }
+        if (err instanceof ConflictError) {
+          return sendConflict(reply, err.message);
         }
         throw err;
       }

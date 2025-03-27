@@ -1,5 +1,18 @@
 import { SpaceType } from "@prisma/client";
 
+// Object label schema
+const objectLabelSchema = {
+  type: "object",
+  properties: {
+    id: { type: "integer" },
+    spaceId: { type: "integer" },
+    name: { type: "string" },
+    confidence: { type: "string" },
+    category: { type: ["string", "null"] },
+    createdAt: { type: "string", format: "date-time" },
+  },
+};
+
 // Base property space schema
 const baseSpaceSchema = {
   type: "object",
@@ -10,9 +23,13 @@ const baseSpaceSchema = {
     type: { type: "string", enum: Object.values(SpaceType) },
     aiGenerated: { type: "boolean" },
     featureVector: { type: ["object", "null"] },
-    confidenceScore: { type: ["number", "null"] },
+    confidenceScore: { type: ["string", "null"] },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
+    objectLabels: {
+      type: "array",
+      items: objectLabelSchema,
+    },
   },
 };
 
@@ -25,7 +42,7 @@ const createSpaceSchema = {
     type: { type: "string", enum: Object.values(SpaceType) },
     aiGenerated: { type: "boolean" },
     featureVector: { type: ["object", "null"] },
-    confidenceScore: { type: ["number", "null"] },
+    confidenceScore: { type: ["string", "null"] },
   },
   required: ["propertyId"],
 };
@@ -38,7 +55,7 @@ const updateSpaceSchema = {
     type: { type: "string", enum: Object.values(SpaceType) },
     aiGenerated: { type: "boolean" },
     featureVector: { type: ["object", "null"] },
-    confidenceScore: { type: ["number", "null"] },
+    confidenceScore: { type: ["string", "null"] },
   },
   minProperties: 1,
 };
@@ -137,8 +154,13 @@ const classificationResponseSchema = {
   properties: {
     spaceId: { type: "integer" },
     spaceType: { type: "string", enum: Object.values(SpaceType) },
-    confidenceScore: { type: "number" },
+    confidenceScore: { type: "string" },
     featureVector: { type: "object" },
+    objectLabels: {
+      type: "array",
+      items: { type: "string" },
+      description: "Detected objects in the space",
+    },
   },
 };
 
@@ -157,6 +179,7 @@ const propertySpaceSchemas = {
   spacesResponseSchema,
   classificationResponseSchema,
   multipleClassificationResponseSchema,
+  objectLabelSchema,
 };
 
 export default propertySpaceSchemas;

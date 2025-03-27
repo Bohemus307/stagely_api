@@ -296,6 +296,27 @@ export class IncidentRepository {
   }
 
   /**
+   * Add images to an incident
+   */
+  async addIncidentImages(
+    incidentId: number,
+    images: { imageUrl: string; caption?: string; takenAt?: Date }[],
+  ): Promise<IncidentImage[]> {
+    await this.prisma.incidentImage.createMany({
+      data: images.map((img) => ({
+        incidentId,
+        imageUrl: img.imageUrl,
+        caption: img.caption,
+        takenAt: img.takenAt || new Date(),
+      })),
+    });
+
+    return this.prisma.incidentImage.findMany({
+      where: { incidentId },
+    });
+  }
+
+  /**
    * Get incident statistics
    */
   async getIncidentStats(propertyId?: number): Promise<IncidentStats> {

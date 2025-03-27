@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is your Prisma schema file with added object labels support
+// The additions are marked with comments
 
 generator client {
   provider = "prisma-client-js"
@@ -10,7 +10,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums
+// Enums - unchanged
 enum PropertyStatus {
   Active
   Maintenance
@@ -43,7 +43,7 @@ enum SpaceType {
   Unknown
 }
 
-// Models
+// Models - unchanged except for PropertySpace and the new SpaceObjectLabel model
 model User {
   id                Int         @id @default(autoincrement()) @map("user_id")
   auth0Id           String      @unique @map("auth0_id")
@@ -122,10 +122,29 @@ model PropertySpace {
   // Relations
   property         Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   images           PropertyImage[]
+  objectLabels     SpaceObjectLabel[]
 
   @@index([propertyId])
   @@index([type])
   @@map("property_spaces")
+}
+
+// NEW: Model for storing detected objects in spaces
+model SpaceObjectLabel {
+  id             Int          @id @default(autoincrement()) @map("label_id")
+  spaceId        Int          @map("space_id")
+  name           String       // The detected object name (e.g., "Sofa", "Refrigerator")
+  confidence     Decimal      @db.Decimal(5, 4) @map("confidence_score")
+  category       String?      // Optional category for grouping (e.g., "Furniture", "Appliance")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  
+  // Relations
+  space          PropertySpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId])
+  @@index([name])
+  @@index([category])
+  @@map("space_object_labels")
 }
 
 model PropertyImage {
