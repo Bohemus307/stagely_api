@@ -1,6 +1,3 @@
-// This is your Prisma schema file with added object labels support
-// The additions are marked with comments
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums - unchanged
+// Enums 
 enum PropertyStatus {
   Active
   Maintenance
@@ -43,7 +40,7 @@ enum SpaceType {
   Unknown
 }
 
-// Models - unchanged except for PropertySpace and the new SpaceObjectLabel model
+// Models
 model User {
   id                Int         @id @default(autoincrement()) @map("user_id")
   auth0Id           String      @unique @map("auth0_id")
@@ -129,7 +126,6 @@ model PropertySpace {
   @@map("property_spaces")
 }
 
-// NEW: Model for storing detected objects in spaces
 model SpaceObjectLabel {
   id             Int          @id @default(autoincrement()) @map("label_id")
   spaceId        Int          @map("space_id")
@@ -149,8 +145,9 @@ model SpaceObjectLabel {
 
 model PropertyImage {
   id              Int             @id @default(autoincrement()) @map("image_id")
-  inspectionId    Int             @map("inspection_id")
-  spaceId         Int?            @map("space_id") // Optional if not yet classified
+  inspectionId    Int?            @map("inspection_id")
+  spaceId         Int?            @map("space_id") 
+  incidentId      Int?            @map("incident_id") 
   imageUrl        String          @map("image_url")
   caption         String?
   takenAt         DateTime        @map("taken_at") @db.Timestamptz()
@@ -160,14 +157,17 @@ model PropertyImage {
   updatedAt       DateTime        @default(now()) @map("updated_at") @db.Timestamptz()
   
   // Relations
-  inspection      Inspection      @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  inspection      Inspection?     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   space           PropertySpace?  @relation(fields: [spaceId], references: [id])
+  incident        Incident?       @relation(fields: [incidentId], references: [id], onDelete: Cascade) // NEW: Relation to incidents
   similarImages   ImageSimilarity[] @relation("BaseImage")
   comparedTo      ImageSimilarity[] @relation("ComparedImage")
   detectedChanges ImageChange[]
+  objectLabels    ImageObjectLabel[] 
 
   @@index([inspectionId])
   @@index([spaceId])
+  @@index([incidentId]) 
   @@index([takenAt])
   @@map("property_images")
 }
@@ -210,42 +210,67 @@ model ImageChange {
   @@map("image_changes")
 }
 
-model Incident {
-  id          Int              @id @default(autoincrement()) @map("incident_id")
-  propertyId  Int              @map("property_id")
-  incidentType String          @map("incident_type")
-  description String
-  reportedAt  DateTime         @map("reported_at") @db.Timestamptz()
-  resolvedAt  DateTime?        @map("resolved_at") @db.Timestamptz()
-  severity    IncidentSeverity
-  status      IncidentStatus   @default(Open)
-  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime         @default(now()) @map("updated_at") @db.Timestamptz()
+model ImageObjectLabel {
+  id             Int           @id @default(autoincrement()) @map("label_id")
+  imageId        Int           @map("image_id")
+  name           String        // The detected object name
+  confidence     Decimal       @db.Decimal(5, 4) @map("confidence_score")
+  category       String?       // Optional category for grouping
+  boundingBox    Json?         @map("bounding_box") // Box coordinates of the object
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   
   // Relations
-  property    Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  images      IncidentImage[]
+  image          PropertyImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
+
+  @@index([imageId])
+  @@index([name])
+  @@index([category])
+  @@map("image_object_labels")
+}
+
+model Incident {
+  id              Int              @id @default(autoincrement()) @map("incident_id")
+  propertyId      Int              @map("property_id")
+  incidentType    String           @map("incident_type")
+  description     String
+  reportedAt      DateTime         @map("reported_at") @db.Timestamptz()
+  resolvedAt      DateTime?        @map("resolved_at") @db.Timestamptz()
+  severity        IncidentSeverity
+  status          IncidentStatus   @default(Open)
+  spaceType       SpaceType?       @map("space_type") // Added to align with PropertySpace
+  featureVector   Json?            @map("feature_vector") // For AI similarity calculations
+  aiClassified    Boolean          @default(false) @map("ai_classified")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime         @default(now()) @map("updated_at") @db.Timestamptz()
+  
+  // Relations
+  property        Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  images          PropertyImage[]  // CHANGED: Using PropertyImage instead of separate IncidentImage
+  objectLabels    IncidentObjectLabel[] // For incident-specific labels
 
   @@index([propertyId])
   @@index([status])
   @@index([severity])
   @@index([reportedAt(sort: Desc)])
   @@index([incidentType, status])
+  @@index([spaceType])
   @@map("incidents")
 }
 
-model IncidentImage {
-  id          Int      @id @default(autoincrement()) @map("image_id")
-  incidentId  Int      @map("incident_id")
-  imageUrl    String   @map("image_url")
-  caption     String?
-  takenAt     DateTime @map("taken_at") @db.Timestamptz()
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz()
+// KEPT: For incident-specific object labeling
+model IncidentObjectLabel {
+  id             Int         @id @default(autoincrement()) @map("label_id")
+  incidentId     Int         @map("incident_id")
+  name           String      // The detected object name (e.g., "Broken pipe", "Damaged wall")
+  confidence     Decimal     @db.Decimal(5, 4) @map("confidence_score")
+  category       String?     // Optional category for grouping (e.g., "Plumbing", "Structural")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   
   // Relations
-  incident    Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  incident       Incident    @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 
   @@index([incidentId])
-  @@map("incident_images")
+  @@index([name])
+  @@index([category])
+  @@map("incident_object_labels")
 }

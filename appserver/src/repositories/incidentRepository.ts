@@ -1,10 +1,12 @@
+import { S3Client } from "@aws-sdk/client-s3";
 import {
   PrismaClient,
   Incident,
   IncidentStatus,
   IncidentSeverity,
   Property,
-  IncidentImage,
+  PropertyImage,
+  Prisma,
 } from "@prisma/client";
 
 // Define types for query parameters
@@ -21,6 +23,14 @@ export interface IncidentQueryParams {
   sortOrder?: "asc" | "desc";
 }
 
+export interface UploadIncidentImageParams {
+  incidentId?: number;
+  imageUrl: string;
+  caption?: string | null;
+  takenAt: Date;
+  metadata?: any | null;
+}
+
 // Define response types
 export interface PaginatedResponse<T> {
   data: T[];
@@ -35,13 +45,13 @@ export interface PaginatedResponse<T> {
 // Define incident with included relations type
 export interface IncidentWithRelations extends Incident {
   property: Pick<Property, "id" | "address" | "city" | "state" | "country">;
-  images: Pick<IncidentImage, "id" | "imageUrl" | "caption" | "createdAt">[];
+  images: Pick<PropertyImage, "id" | "imageUrl" | "caption" | "createdAt">[];
 }
 
 // Define incident with full relations type
 export interface IncidentWithFullRelations extends Incident {
   property: Property;
-  images: IncidentImage[];
+  images: PropertyImage[];
 }
 
 // Define incident statistics type
@@ -66,9 +76,14 @@ export interface IncidentStats {
  */
 export class IncidentRepository {
   private prisma: PrismaClient;
+  private s3: { client: S3Client; bucket: string; region: string };
 
-  constructor(prisma: PrismaClient) {
+  constructor(
+    prisma: PrismaClient,
+    s3: { client: S3Client; bucket: string; region: string },
+  ) {
     this.prisma = prisma;
+    this.s3 = s3;
   }
 
   /**
@@ -165,10 +180,37 @@ export class IncidentRepository {
   }
 
   /**
+   * Associate object labels with an existing space
+   */
+  async addObjectLabelsToSpace(
+    spaceId: number,
+    objectLabels: Array<{
+      name: string;
+      confidence: number;
+      category?: string;
+    }>,
+  ): Promise<void> {
+    if (!objectLabels || objectLabels.length === 0) return;
+
+    await this.prisma.spaceObjectLabel.createMany({
+      data: objectLabels.map((label) => ({
+        spaceId,
+        name: label.name,
+        confidence: new Prisma.Decimal(label.confidence.toFixed(4)),
+        category: label.category,
+      })),
+      skipDuplicates: true, // Skip if the same object is already labeled
+    });
+  }
+
+  /**
    * Create a new incident
    */
   async createIncident(
-    data: Omit<Incident, "id" | "createdAt" | "updatedAt">,
+    data: Omit<
+      Prisma.IncidentUncheckedCreateInput,
+      "id" | "createdAt" | "updatedAt"
+    >,
   ): Promise<Incident> {
     // Use transaction to ensure both incident is created and property is updated
     return this.prisma.$transaction(async (tx) => {
@@ -301,8 +343,8 @@ export class IncidentRepository {
   async addIncidentImages(
     incidentId: number,
     images: { imageUrl: string; caption?: string; takenAt?: Date }[],
-  ): Promise<IncidentImage[]> {
-    await this.prisma.incidentImage.createMany({
+  ): Promise<PropertyImage[]> {
+    await this.prisma.propertyImage.createMany({
       data: images.map((img) => ({
         incidentId,
         imageUrl: img.imageUrl,
@@ -311,9 +353,43 @@ export class IncidentRepository {
       })),
     });
 
-    return this.prisma.incidentImage.findMany({
+    return this.prisma.propertyImage.findMany({
       where: { incidentId },
     });
+  }
+
+  /**
+   * Upload an image to an property space
+   */
+  async uploadIncidentImage(
+    data: UploadIncidentImageParams,
+  ): Promise<PropertyImage> {
+    return this.prisma.propertyImage.create({
+      data: {
+        imageUrl: data.imageUrl,
+        caption: data.caption,
+        takenAt: data.takenAt,
+        incidentId: data.incidentId as number,
+        metadata: data.metadata || undefined,
+      },
+    });
+  }
+
+  /**
+   * Associate images with a incident
+   */
+  async associateImagesWithIncident(
+    incidentId: number,
+    imageIds: number[],
+  ): Promise<void> {
+    await this.prisma.$transaction(
+      imageIds.map((imageId) =>
+        this.prisma.propertyImage.update({
+          where: { id: imageId },
+          data: { incidentId },
+        }),
+      ),
+    );
   }
 
   /**
@@ -420,6 +496,29 @@ export class IncidentRepository {
         })),
         avgResolutionTime: avgResolutionTimeHours,
       };
+    });
+  }
+
+  /**
+   * Check if a property exists
+   */
+  async propertyExists(propertyId: number): Promise<boolean> {
+    const count = await this.prisma.property.count({
+      where: { id: propertyId },
+    });
+    return count > 0;
+  }
+
+  /**
+   * Get images by their IDs
+   */
+  async getImagesByIds(imageIds: number[]): Promise<PropertyImage[]> {
+    return this.prisma.propertyImage.findMany({
+      where: {
+        id: {
+          in: imageIds,
+        },
+      },
     });
   }
 }

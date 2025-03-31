@@ -21,6 +21,15 @@ export interface PropertySpaceQueryParams {
   sortOrder?: "asc" | "desc";
 }
 
+export interface UploadPropertySpaceImageParams {
+  inspectionId?: number;
+  imageUrl: string;
+  caption?: string | null;
+  takenAt: Date;
+  spaceId?: number | null;
+  metadata?: any | null;
+}
+
 // Define response types
 export interface PaginatedResponse<T> {
   data: T[];
@@ -329,6 +338,23 @@ export class PropertySpaceRepository {
       },
       data: {
         spaceId: null,
+      },
+    });
+  }
+
+  /**
+   * Upload an image to an property space
+   */
+  async uploadPropertySpaceImage(
+    data: UploadPropertySpaceImageParams,
+  ): Promise<PropertyImage> {
+    return this.prisma.propertyImage.create({
+      data: {
+        imageUrl: data.imageUrl,
+        caption: data.caption,
+        takenAt: data.takenAt,
+        spaceId: data.spaceId as number,
+        metadata: data.metadata || undefined,
       },
     });
   }

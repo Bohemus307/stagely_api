@@ -550,7 +550,7 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /inspections/:id/bulk-upload
+  // POST /inspections/:id/bulk-upload // need this in spaces as well!!!!
   fastify.route({
     method: "POST",
     url: "/:id/bulk-upload",
@@ -727,7 +727,7 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         );
         const image = images.find((img) => img.id === parseInt(id));
 
-        if (!image) {
+        if (!image || !image.inspectionId) {
           return sendNotFound(reply, "Image not found");
         }
 
@@ -821,7 +821,7 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         );
         const image = images.find((img) => img.id === parseInt(id));
 
-        if (!image) {
+        if (!image || !image.inspectionId) {
           return sendNotFound(reply, "Image not found");
         }
 
@@ -951,7 +951,10 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Verify user owns all images
         for (const image of images) {
-          if (image.inspection.property.userId !== user.id) {
+          if (
+            image.inspection &&
+            image.inspection.property.userId !== user.id
+          ) {
             return sendUnauthorized(
               reply,
               "You don't have permission to classify one or more of these images",

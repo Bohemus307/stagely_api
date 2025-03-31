@@ -22,7 +22,7 @@ interface StatusUpdateBody {
  */
 async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
-  const incidentService = new IncidentService(fastify.prisma);
+  const incidentService = new IncidentService(fastify.prisma, fastify.s3);
 
   // GET /incidents
   fastify.route({

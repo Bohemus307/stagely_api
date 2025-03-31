@@ -2,8 +2,13 @@ import { FastifyInstance } from "fastify";
 import { SpaceType } from "@prisma/client";
 import { PropertySpaceService } from "../../../services/properties/spaces";
 import { NotFoundError, ConflictError } from "../../../utils/errors";
-import { sendNotFound, sendConflict } from "../../../utils/responses";
+import {
+  sendNotFound,
+  sendConflict,
+  sendUnauthorized,
+} from "../../../utils/responses";
 import propertySpaceSchemas from "../../../schemas/property-space-schema";
+import { PropertyService } from "../../../services/properties";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -35,6 +40,7 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.prisma,
     fastify.s3,
   );
+  const propertyService = new PropertyService(fastify.prisma);
 
   // GET /property-spaces
   fastify.route({
@@ -370,16 +376,34 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /property-spaces
+  // POST /property-spaces with image URL handling
   fastify.route({
     method: "POST",
     url: "/",
     onRequest: [fastify.authenticate],
     schema: {
       tags: ["property-spaces"],
-      description: "Create a new property space",
-      summary: "Create property space",
-      body: propertySpaceSchemas.createSpaceSchema,
+      description:
+        "Create a new property space with image upload and classification",
+      summary: "Create property space with image",
+      body: {
+        type: "object",
+        properties: {
+          propertyId: {
+            type: "integer",
+            description: "Property ID to associate space with",
+          },
+          imageUrl: {
+            type: "string",
+            description: "URL of the image to upload and classify",
+          },
+          metadata: {
+            type: "object",
+            description: "Additional metadata for the image",
+          },
+        },
+        required: ["propertyId", "imageUrl"],
+      },
       response: {
         201: propertySpaceSchemas.spaceResponseSchema,
         404: {
@@ -394,6 +418,18 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
+        409: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 409 },
+                message: { type: "string", example: "Failed to process image" },
+              },
+            },
+          },
+        },
       },
       security: [
         {
@@ -402,15 +438,150 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
       ],
     },
     handler: async (request, reply) => {
+      const { propertyId, imageUrl, metadata } = request.body as {
+        propertyId: number;
+        imageUrl: string;
+        metadata?: any;
+      };
+
       try {
-        const space = await propertySpaceService.createSpace(
-          request.body as any,
+        // Use the service method that encapsulates the entire workflow
+        const space = await propertySpaceService.createSpaceFromImage(
+          propertyId,
+          imageUrl,
+          metadata,
         );
+
         reply.code(201);
         return space;
       } catch (err) {
+        console.error("Error creating space with image:", err);
+
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, err.message);
+        }
+        if (err instanceof ConflictError) {
+          return sendConflict(reply, err.message);
+        }
+
+        reply.code(500).send({
+          error: {
+            statusCode: 500,
+            message: "Failed to create space with image",
+          },
+        });
+      }
+    },
+  });
+
+  // POST /spaces/:id/bulk-upload
+  fastify.route({
+    method: "POST",
+    url: "/:id/bulk-upload",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["property-spaces"],
+      description: "Upload multiple images to an space at once",
+      summary: "Bulk upload property space images",
+      params: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            pattern: "^\\d+$",
+            description: "Property Space ID",
+          },
+        },
+        required: ["id"],
+      },
+      body: {
+        type: "object",
+        properties: {
+          images: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                imageUrl: { type: "string" },
+                caption: { type: "string", nullable: true },
+                takenAt: { type: "string", format: "date-time" },
+                metadata: { type: "object", nullable: true },
+              },
+              required: ["imageUrl", "takenAt"],
+            },
+          },
+        },
+        required: ["images"],
+      },
+      response: {
+        201: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            count: { type: "integer" },
+            images: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "integer" },
+                  imageUrl: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params as ParamsWithId;
+      const { images } = request.body as { images: any[] };
+
+      try {
+        // First get the inspection to check property ownership
+        const existingSpace = await propertySpaceService.getSpaceById(
+          parseInt(id),
+        );
+
+        // Get user from auth token
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user) {
+          return sendUnauthorized(reply, "User not found");
+        }
+
+        // Get the property to verify ownership
+        const property = await propertyService.getPropertyById(
+          existingSpace.propertyId,
+        );
+
+        if (property.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to upload images to this property space",
+          );
+        }
+
+        const uploadedImages = await propertySpaceService.bulkUploadSpaceImages(
+          parseInt(id),
+          images,
+        );
+
+        reply.code(201);
+        return {
+          success: true,
+          count: uploadedImages.length,
+          images: uploadedImages.map((img) => ({
+            id: img.id,
+            imageUrl: img.imageUrl,
+          })),
+        };
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, "Property Space not found");
         }
         throw err;
       }

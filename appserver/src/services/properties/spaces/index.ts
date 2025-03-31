@@ -299,7 +299,6 @@ export class PropertySpaceService {
 
     // Extract detected objects from the feature vector
     const featureVector = classificationResult.featureVector as any;
-    console.log("FV", featureVector);
 
     if (
       featureVector?.detectedObjects &&
@@ -542,5 +541,111 @@ export class PropertySpaceService {
     }
 
     return results;
+  }
+
+  /**
+   * Bulk upload images to an space
+   */
+  async bulkUploadSpaceImages(
+    spaceId: number,
+    images: {
+      imageUrl: string;
+      caption?: string | null;
+      takenAt: Date;
+      metadata?: any | null;
+    }[],
+  ): Promise<PropertyImage[]> {
+    // First check if inspection exists
+    const space = await this.repository.getSpaceById(spaceId);
+
+    if (!space) {
+      throw new NotFoundError(`Space with ID ${spaceId} not found`);
+    }
+
+    // Process each image one by one
+    const uploadedImages: PropertyImage[] = [];
+
+    for (const image of images) {
+      const uploadedImage = await this.repository.uploadPropertySpaceImage({
+        spaceId,
+        imageUrl: image.imageUrl,
+        caption: image.caption,
+        takenAt: image.takenAt,
+        metadata: image.metadata,
+      });
+
+      uploadedImages.push(uploadedImage);
+    }
+
+    return uploadedImages;
+  }
+
+  /**
+   * Create a space from an image URL by:
+   * 1. Creating a temporary space
+   * 2. Uploading the image to this space
+   * 3. Classifying the image
+   * 4. Creating the proper space based on classification
+   */
+  async createSpaceFromImage(
+    propertyId: number,
+    imageUrl: string,
+    metadata?: any,
+  ): Promise<PropertySpaceWithFullRelations> {
+    // Check if property exists
+    const propertyExists = await this.repository.propertyExists(propertyId);
+    if (!propertyExists) {
+      throw new NotFoundError("Property not found");
+    }
+
+    // Create a temporary space to associate with the image
+    const tempSpace = await this.repository.createSpace({
+      propertyId,
+      name: `Temp ${new Date().toISOString()}`,
+      type: SpaceType.Unknown,
+      aiGenerated: true,
+    });
+
+    try {
+      // Upload the image using the existing bulkUploadSpaceImages method
+      const currentDate = new Date();
+      const uploadedImages = await this.bulkUploadSpaceImages(tempSpace.id, [
+        {
+          imageUrl,
+          takenAt: currentDate,
+          metadata,
+        },
+      ]);
+
+      if (uploadedImages.length === 0) {
+        throw new ConflictError("Failed to upload image");
+      }
+
+      const propertyImage = uploadedImages[0];
+
+      // Now classify the image and create a properly classified space
+      const classificationResults = await this.autoCreateAndClassifySpaces(
+        propertyId,
+        [propertyImage.id],
+      );
+
+      // Delete the temporary space as we now have a properly classified one
+      await this.deleteSpace(tempSpace.id);
+
+      // If classification failed, throw an error
+      if (classificationResults.length === 0) {
+        throw new ConflictError("Failed to classify and create space");
+      }
+
+      // Get the created space ID and return the full space details
+      const spaceId = classificationResults[0].spaceId;
+      return await this.getSpaceById(spaceId);
+    } catch (error) {
+      // Clean up the temporary space if anything fails
+      await this.deleteSpace(tempSpace.id).catch(() => {
+        // Ignore errors during cleanup
+      });
+      throw error;
+    }
   }
 }
