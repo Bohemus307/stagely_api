@@ -639,6 +639,10 @@ export class PropertySpaceService {
 
       // Get the created space ID and return the full space details
       const spaceId = classificationResults[0].spaceId;
+      if (!spaceId) {
+        throw new ConflictError("No Space Created");
+      }
+
       return await this.getSpaceById(spaceId);
     } catch (error) {
       // Clean up the temporary space if anything fails

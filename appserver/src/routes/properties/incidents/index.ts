@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { IncidentStatus, IncidentSeverity } from "@prisma/client";
+import { IncidentStatus, IncidentSeverity, SpaceType } from "@prisma/client";
 import { NotFoundError } from "../../../utils/errors";
 
 import { sendNotFound, sendUnauthorized } from "../../../utils/responses";
@@ -63,6 +63,11 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             enum: Object.values(IncidentSeverity),
             description: "Filter by incident severity",
           },
+          spaceType: {
+            type: "string",
+            enum: Object.values(SpaceType),
+            description: "Filter by space type",
+          },
           incidentType: {
             type: "string",
             description: "Filter by incident type",
@@ -118,6 +123,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                     type: "string",
                     enum: Object.values(IncidentStatus),
                   },
+                  spaceType: {
+                    type: "string",
+                    enum: Object.values(SpaceType),
+                    nullable: true,
+                  },
+                  aiClassified: { type: "boolean" },
                   createdAt: { type: "string", format: "date-time" },
                   updatedAt: { type: "string", format: "date-time" },
                   property: {
@@ -127,7 +138,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                       address: { type: "string" },
                       city: { type: "string" },
                       state: { type: "string", nullable: true },
+                      zipCode: { type: "string", nullable: true },
                       country: { type: "string" },
+                      status: {
+                        type: "string",
+                        enum: ["Active", "Maintenance", "Archived"],
+                      },
                     },
                   },
                   images: {
@@ -138,7 +154,20 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                         id: { type: "integer" },
                         imageUrl: { type: "string" },
                         caption: { type: "string", nullable: true },
+                        takenAt: { type: "string", format: "date-time" },
                         createdAt: { type: "string", format: "date-time" },
+                      },
+                    },
+                  },
+                  objectLabels: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        name: { type: "string" },
+                        confidence: { type: "number" },
+                        category: { type: "string", nullable: true },
                       },
                     },
                   },
@@ -240,6 +269,13 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               type: "string",
               enum: Object.values(IncidentStatus),
             },
+            spaceType: {
+              type: "string",
+              enum: Object.values(SpaceType),
+              nullable: true,
+            },
+            aiClassified: { type: "boolean" },
+            featureVector: { type: "object", nullable: true },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
             property: {
@@ -251,6 +287,10 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                 state: { type: "string", nullable: true },
                 zipCode: { type: "string", nullable: true },
                 country: { type: "string" },
+                status: {
+                  type: "string",
+                  enum: ["Active", "Maintenance", "Archived"],
+                },
                 userId: { type: "integer" },
               },
             },
@@ -263,6 +303,21 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                   imageUrl: { type: "string" },
                   caption: { type: "string", nullable: true },
                   takenAt: { type: "string", format: "date-time" },
+                  metadata: { type: "object", nullable: true },
+                  createdAt: { type: "string", format: "date-time" },
+                  updatedAt: { type: "string", format: "date-time" },
+                },
+              },
+            },
+            objectLabels: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "integer" },
+                  name: { type: "string" },
+                  confidence: { type: "number" },
+                  category: { type: "string", nullable: true },
                   createdAt: { type: "string", format: "date-time" },
                 },
               },
@@ -319,105 +374,127 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /incidents
-  fastify.route({
-    method: "POST",
-    url: "/",
-    onRequest: [fastify.authenticate],
-    schema: {
-      tags: ["incidents"],
-      description: "Create a new incident",
-      summary: "Create incident",
-      body: {
-        type: "object",
-        properties: {
-          propertyId: { type: "integer" },
-          incidentType: { type: "string" },
-          description: { type: "string" },
-          reportedAt: { type: "string", format: "date-time" },
-          severity: {
-            type: "string",
-            enum: Object.values(IncidentSeverity),
-          },
-          status: {
-            type: "string",
-            enum: Object.values(IncidentStatus),
-          },
-          images: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                imageUrl: { type: "string" },
-                caption: { type: "string" },
-                takenAt: { type: "string", format: "date-time" },
-              },
-              required: ["imageUrl"],
-            },
-          },
-        },
-        required: ["propertyId", "incidentType", "description", "severity"],
-      },
-      response: {
-        201: {
-          type: "object",
-          properties: {
-            id: { type: "integer" },
-            propertyId: { type: "integer" },
-            incidentType: { type: "string" },
-            description: { type: "string" },
-            reportedAt: { type: "string", format: "date-time" },
-            resolvedAt: { type: "string", format: "date-time", nullable: true },
-            severity: {
-              type: "string",
-              enum: Object.values(IncidentSeverity),
-            },
-            status: {
-              type: "string",
-              enum: Object.values(IncidentStatus),
-            },
-            createdAt: { type: "string", format: "date-time" },
-            updatedAt: { type: "string", format: "date-time" },
-          },
-        },
-      },
-      security: [{ bearerAuth: [] }],
-    },
-    handler: async (request, reply) => {
-      const incidentData = request.body as any;
+  // fastify.route({
+  //   method: "POST",
+  //   url: "/",
+  //   onRequest: [fastify.authenticate],
+  //   schema: {
+  //     tags: ["incidents"],
+  //     description: "Create a new incident",
+  //     summary: "Create incident",
+  //     body: {
+  //       type: "object",
+  //       properties: {
+  //         propertyId: { type: "integer" },
+  //         incidentType: { type: "string" },
+  //         description: { type: "string" },
+  //         reportedAt: { type: "string", format: "date-time" },
+  //         severity: {
+  //           type: "string",
+  //           enum: Object.values(IncidentSeverity),
+  //         },
+  //         spaceType: {
+  //           type: "string",
+  //           enum: Object.values(SpaceType),
+  //           nullable: true,
+  //         },
+  //         status: {
+  //           type: "string",
+  //           enum: Object.values(IncidentStatus),
+  //         },
+  //         images: {
+  //           type: "array",
+  //           items: {
+  //             type: "object",
+  //             properties: {
+  //               imageUrl: { type: "string" },
+  //               caption: { type: "string", nullable: true },
+  //               takenAt: { type: "string", format: "date-time" },
+  //               metadata: { type: "object", nullable: true },
+  //             },
+  //             required: ["imageUrl", "takenAt"],
+  //           },
+  //         },
+  //       },
+  //       required: [
+  //         "propertyId",
+  //         "incidentType",
+  //         "description",
+  //         "severity",
+  //         "reportedAt",
+  //       ],
+  //     },
+  //     response: {
+  //       201: {
+  //         type: "object",
+  //         properties: {
+  //           id: { type: "integer" },
+  //           propertyId: { type: "integer" },
+  //           incidentType: { type: "string" },
+  //           description: { type: "string" },
+  //           reportedAt: { type: "string", format: "date-time" },
+  //           resolvedAt: { type: "string", format: "date-time", nullable: true },
+  //           severity: {
+  //             type: "string",
+  //             enum: Object.values(IncidentSeverity),
+  //           },
+  //           status: {
+  //             type: "string",
+  //             enum: Object.values(IncidentStatus),
+  //           },
+  //           spaceType: {
+  //             type: "string",
+  //             enum: Object.values(SpaceType),
+  //             nullable: true,
+  //           },
+  //           aiClassified: { type: "boolean" },
+  //           createdAt: { type: "string", format: "date-time" },
+  //           updatedAt: { type: "string", format: "date-time" },
+  //         },
+  //       },
+  //     },
+  //     security: [{ bearerAuth: [] }],
+  //   },
+  //   handler: async (request, reply) => {
+  //     const incidentData = request.body as any;
 
-      try {
-        // Get user from auth token
-        const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
-        });
+  //     try {
+  //       // Get user from auth token
+  //       const user = await fastify.prisma.user.findUnique({
+  //         where: { auth0Id: request?.user?.sub },
+  //       });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
-        }
+  //       if (!user) {
+  //         return sendUnauthorized(reply, "User not found");
+  //       }
 
-        // Verify the property belongs to the user
-        const property = await fastify.prisma.property.findUnique({
-          where: { id: incidentData.propertyId },
-          select: { userId: true },
-        });
+  //       // Verify the property belongs to the user
+  //       const property = await fastify.prisma.property.findUnique({
+  //         where: { id: incidentData.propertyId },
+  //         select: { userId: true, id: true },
+  //       });
 
-        if (!property || property.userId !== user.id) {
-          return sendUnauthorized(
-            reply,
-            "You don't have permission to add an incident to this property",
-          );
-        }
+  //       if (!property || property.userId !== user.id) {
+  //         return sendUnauthorized(
+  //           reply,
+  //           "You don't have permission to add an incident to this property",
+  //         );
+  //       }
 
-        const incident = await incidentService.createIncident(incidentData);
+  //       // Use normal create if no special image_url is provided
+  //       const incident = await incidentService.createIncidentFromImage(
+  //             property.id,
+  //             incidentData.image_url,
+  //           )
 
-        reply.code(201);
-        return incident;
-      } catch (err: any) {
-        fastify.log.error(err);
-        throw err;
-      }
-    },
-  });
+  //       reply.code(201);
+  //       return incident;
+  //     } catch (err: any) {
+  //       fastify.log.error(err);
+  //       throw err;
+  //     }
+  //   },
+  // });
 
   // PUT /incidents/:id
   fastify.route({
@@ -450,6 +527,14 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             type: "string",
             enum: Object.values(IncidentStatus),
           },
+          spaceType: {
+            type: "string",
+            enum: Object.values(SpaceType),
+            nullable: true,
+          },
+          aiClassified: {
+            type: "boolean",
+          },
           images: {
             type: "array",
             items: {
@@ -457,10 +542,11 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               properties: {
                 id: { type: "integer" },
                 imageUrl: { type: "string" },
-                caption: { type: "string" },
+                caption: { type: "string", nullable: true },
                 takenAt: { type: "string", format: "date-time" },
+                metadata: { type: "object", nullable: true },
               },
-              required: ["imageUrl"],
+              required: ["imageUrl", "takenAt"],
             },
           },
         },
@@ -483,6 +569,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               type: "string",
               enum: Object.values(IncidentStatus),
             },
+            spaceType: {
+              type: "string",
+              enum: Object.values(SpaceType),
+              nullable: true,
+            },
+            aiClassified: { type: "boolean" },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
           },
@@ -597,6 +689,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               type: "string",
               enum: Object.values(IncidentStatus),
             },
+            spaceType: {
+              type: "string",
+              enum: Object.values(SpaceType),
+              nullable: true,
+            },
+            aiClassified: { type: "boolean" },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
           },
@@ -762,10 +860,11 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               type: "object",
               properties: {
                 imageUrl: { type: "string" },
-                caption: { type: "string" },
+                caption: { type: "string", nullable: true },
                 takenAt: { type: "string", format: "date-time" },
+                metadata: { type: "object", nullable: true },
               },
-              required: ["imageUrl"],
+              required: ["imageUrl", "takenAt"],
             },
           },
         },
@@ -782,6 +881,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               imageUrl: { type: "string" },
               caption: { type: "string", nullable: true },
               takenAt: { type: "string", format: "date-time" },
+              metadata: { type: "object", nullable: true },
               createdAt: { type: "string", format: "date-time" },
               updatedAt: { type: "string", format: "date-time" },
             },
@@ -805,7 +905,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
       const { images } = request.body as {
-        images: { imageUrl: string; caption?: string; takenAt?: string }[];
+        images: {
+          imageUrl: string;
+          caption?: string;
+          takenAt: string;
+          metadata?: object;
+        }[];
       };
 
       try {
@@ -894,6 +999,19 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                 },
               },
             },
+            bySpaceType: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  spaceType: {
+                    type: "string",
+                    enum: Object.values(SpaceType),
+                  },
+                  _count: { type: "integer" },
+                },
+              },
+            },
             topIncidentTypes: {
               type: "array",
               items: {
@@ -951,6 +1069,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           return {
             byStatus: [],
             bySeverity: [],
+            bySpaceType: [],
             topIncidentTypes: [],
             avgResolutionTime: 0,
           };
@@ -963,6 +1082,153 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
       const stats = await incidentService.getIncidentStats(parsedPropertyId);
       return stats;
+    },
+  });
+
+  // POST /incidents/
+  fastify.route({
+    method: "POST",
+    url: "/",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["incidents"],
+      description: "Analyze an image to detect and classify an incident",
+      summary: "AI analysis of incident image",
+      body: {
+        type: "object",
+        properties: {
+          propertyId: { type: "integer" },
+          imageUrl: { type: "string" },
+        },
+        required: ["propertyId", "imageUrl"],
+      },
+      response: {
+        201: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            propertyId: { type: "integer" },
+            incidentType: { type: "string" },
+            description: { type: "string" },
+            reportedAt: { type: "string", format: "date-time" },
+            resolvedAt: { type: "string", format: "date-time", nullable: true },
+            severity: {
+              type: "string",
+              enum: Object.values(IncidentSeverity),
+            },
+            status: {
+              type: "string",
+              enum: Object.values(IncidentStatus),
+            },
+            spaceType: {
+              type: "string",
+              enum: Object.values(SpaceType),
+              nullable: true,
+            },
+            featureVector: {
+              type: "object",
+              properties: {
+                dimensions: {
+                  type: "array",
+                  items: { type: "number" },
+                },
+                dominantColors: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                detectedObjects: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+              },
+            },
+            aiClassified: { type: "boolean" },
+            createdAt: { type: "string", format: "date-time" },
+            updatedAt: { type: "string", format: "date-time" },
+            property: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                userId: { type: "integer" },
+                address: { type: "string" },
+                city: { type: "string" },
+                state: { type: "string", nullable: true },
+                zipCode: { type: "string", nullable: true },
+                country: { type: "string" },
+                latitude: { type: "number" },
+                longitude: { type: "number" },
+                status: { type: "string" },
+                incidentCount: { type: "integer" },
+                openIncidentCount: { type: "integer" },
+                lastIncidentAt: { type: "string", format: "date-time" },
+                createdAt: { type: "string", format: "date-time" },
+                updatedAt: { type: "string", format: "date-time" },
+              },
+            },
+            images: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "integer" },
+                  inspectionId: { type: "integer", nullable: true },
+                  spaceId: { type: "integer", nullable: true },
+                  incidentId: { type: "integer" },
+                  imageUrl: { type: "string" },
+                  caption: { type: "string", nullable: true },
+                  takenAt: { type: "string", format: "date-time" },
+                  metadata: { type: "object", nullable: true },
+                  featureVector: { type: "object", nullable: true },
+                  createdAt: { type: "string", format: "date-time" },
+                  updatedAt: { type: "string", format: "date-time" },
+                },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { propertyId, imageUrl } = request.body as {
+        propertyId: number;
+        imageUrl: string;
+      };
+
+      try {
+        // Get user from auth token
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user) {
+          return sendUnauthorized(reply, "User not found");
+        }
+
+        // Verify the property belongs to the user
+        const property = await fastify.prisma.property.findUnique({
+          where: { id: propertyId },
+          select: { userId: true, id: true },
+        });
+
+        if (!property || property.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to analyze incidents for this property",
+          );
+        }
+
+        const incident = await incidentService.createIncidentFromImage(
+          propertyId,
+          imageUrl,
+        );
+
+        reply.code(201);
+        return incident;
+      } catch (err: any) {
+        fastify.log.error(err);
+        throw err;
+      }
     },
   });
 }

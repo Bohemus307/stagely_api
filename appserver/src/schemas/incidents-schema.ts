@@ -1,4 +1,4 @@
-import { IncidentSeverity, IncidentStatus } from "@prisma/client";
+import { IncidentSeverity, IncidentStatus, SpaceType } from "@prisma/client";
 
 // Base incident schema with common properties
 const incidentBaseSchema = {
@@ -17,6 +17,15 @@ const incidentBaseSchema = {
       enum: Object.values(IncidentStatus),
       default: "Open",
     },
+    spaceType: {
+      type: "string",
+      enum: Object.values(SpaceType),
+      nullable: true,
+    },
+    aiClassified: {
+      type: "boolean",
+      default: false,
+    },
   },
 };
 
@@ -33,13 +42,20 @@ export const createIncidentSchema = {
         properties: {
           imageUrl: { type: "string" },
           caption: { type: "string", nullable: true },
-          takenAt: { type: "string", format: "date-time", nullable: true },
+          takenAt: { type: "string", format: "date-time" },
+          metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl"],
+        required: ["imageUrl", "takenAt"],
       },
     },
   },
-  required: ["propertyId", "incidentType", "description", "severity"],
+  required: [
+    "propertyId",
+    "incidentType",
+    "description",
+    "severity",
+    "reportedAt",
+  ],
   additionalProperties: false,
 };
 
@@ -56,9 +72,10 @@ export const updateIncidentSchema = {
           id: { type: "integer" },
           imageUrl: { type: "string" },
           caption: { type: "string", nullable: true },
-          takenAt: { type: "string", format: "date-time", nullable: true },
+          takenAt: { type: "string", format: "date-time" },
+          metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl"],
+        required: ["imageUrl", "takenAt"],
       },
     },
   },
@@ -96,9 +113,10 @@ export const addIncidentImagesSchema = {
         properties: {
           imageUrl: { type: "string" },
           caption: { type: "string", nullable: true },
-          takenAt: { type: "string", format: "date-time", nullable: true },
+          takenAt: { type: "string", format: "date-time" },
+          metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl"],
+        required: ["imageUrl", "takenAt"],
       },
     },
   },
@@ -106,7 +124,7 @@ export const addIncidentImagesSchema = {
   additionalProperties: false,
 };
 
-// Schema for incident image
+// Schema for incident image (using PropertyImage model from Prisma)
 const incidentImageSchema = {
   type: "object",
   properties: {
@@ -115,8 +133,23 @@ const incidentImageSchema = {
     imageUrl: { type: "string" },
     caption: { type: "string", nullable: true },
     takenAt: { type: "string", format: "date-time" },
+    metadata: { type: "object", nullable: true },
+    featureVector: { type: "object", nullable: true },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
+  },
+};
+
+// Schema for incident object label
+const incidentObjectLabelSchema = {
+  type: "object",
+  properties: {
+    id: { type: "integer" },
+    incidentId: { type: "integer" },
+    name: { type: "string" },
+    confidence: { type: "number" },
+    category: { type: "string", nullable: true },
+    createdAt: { type: "string", format: "date-time" },
   },
 };
 
@@ -127,6 +160,7 @@ export const incidentResponseSchema = {
     id: { type: "integer" },
     propertyId: { type: "integer" },
     ...incidentBaseSchema.properties,
+    featureVector: { type: "object", nullable: true },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
     property: {
@@ -140,13 +174,17 @@ export const incidentResponseSchema = {
         country: { type: "string" },
         status: {
           type: "string",
-          enum: Object.values(IncidentStatus),
+          enum: ["Active", "Maintenance", "Archived"],
         },
       },
     },
     images: {
       type: "array",
       items: incidentImageSchema,
+    },
+    objectLabels: {
+      type: "array",
+      items: incidentObjectLabelSchema,
     },
   },
 };
@@ -163,6 +201,7 @@ export const incidentsResponseSchema = {
           id: { type: "integer" },
           propertyId: { type: "integer" },
           ...incidentBaseSchema.properties,
+          featureVector: { type: "object", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
           property: {
@@ -172,7 +211,12 @@ export const incidentsResponseSchema = {
               address: { type: "string" },
               city: { type: "string" },
               state: { type: "string", nullable: true },
+              zipCode: { type: "string", nullable: true },
               country: { type: "string" },
+              status: {
+                type: "string",
+                enum: ["Active", "Maintenance", "Archived"],
+              },
             },
           },
           images: {
@@ -183,7 +227,20 @@ export const incidentsResponseSchema = {
                 id: { type: "integer" },
                 imageUrl: { type: "string" },
                 caption: { type: "string", nullable: true },
+                takenAt: { type: "string", format: "date-time" },
                 createdAt: { type: "string", format: "date-time" },
+              },
+            },
+          },
+          objectLabels: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                name: { type: "string" },
+                confidence: { type: "number" },
+                category: { type: "string", nullable: true },
               },
             },
           },
@@ -227,6 +284,19 @@ export const incidentStatsResponseSchema = {
           severity: {
             type: "string",
             enum: Object.values(IncidentSeverity),
+          },
+          _count: { type: "integer" },
+        },
+      },
+    },
+    bySpaceType: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          spaceType: {
+            type: "string",
+            enum: Object.values(SpaceType),
           },
           _count: { type: "integer" },
         },

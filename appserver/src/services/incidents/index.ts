@@ -520,7 +520,7 @@ export class IncidentService {
 
           // Create a incident
           const incidentName = `${spaceType} ${new Date().toISOString().slice(0, 10)}`;
-          const newSpace = await this.incidentRepo.createIncident({
+          const newIncident = await this.incidentRepo.createIncident({
             propertyId,
             incidentType: spaceType.toString(),
             description: incidentName,
@@ -539,7 +539,7 @@ export class IncidentService {
           // Save the object labels if we have any
           if (objectLabels.length > 0) {
             await this.incidentRepo.addObjectLabelsToSpace(
-              newSpace.id,
+              newIncident.id,
               objectLabels,
             );
           }
@@ -549,13 +549,13 @@ export class IncidentService {
 
           // Associate images with the new space
           await this.incidentRepo.associateImagesWithIncident(
-            newSpace.id,
+            newIncident.id,
             groupImageIds,
           );
 
           // Create the result (with optional objectLabels field)
           const result: SpaceClassificationResult = {
-            spaceId: newSpace.id,
+            incidentId: newIncident.id,
             spaceType: spaceType as SpaceType,
             confidenceScore: new Prisma.Decimal(
               Number(results.confidenceScore).toFixed(4),
@@ -588,13 +588,13 @@ export class IncidentService {
   }
 
   /**
-   * Create a space from an image URL by:
-   * 1. Creating a temporary space
+   * Create a incident from an image URL by:
+   * 1. Creating a temporary incident
    * 2. Uploading the image to this space
    * 3. Classifying the image
-   * 4. Creating the proper space based on classification
+   * 4. Creating the incident based on classification
    */
-  async createSpaceFromImage(
+  async createIncidentFromImage(
     propertyId: number,
     imageUrl: string,
     metadata?: any,
@@ -651,8 +651,14 @@ export class IncidentService {
       }
 
       // Get the created space ID and return the full space details
-      const spaceId = classificationResults[0].spaceId;
-      return await this.getIncidentById(spaceId);
+      const incidentId = classificationResults[0].incidentId;
+
+      if (!incidentId) {
+        throw new ConflictError("No Space Created");
+      }
+      const incident = await this.getIncidentById(incidentId);
+
+      return incident;
     } catch (error) {
       // Clean up the temporary space if anything fails
       await this.deleteIncident(tempSpace.id).catch(() => {

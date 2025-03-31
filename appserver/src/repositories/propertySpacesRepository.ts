@@ -62,7 +62,8 @@ export interface PropertySpaceWithFullRelations extends PropertySpace {
 
 // Define space classification result type
 export interface SpaceClassificationResult {
-  spaceId: number;
+  spaceId?: number;
+  incidentId?: number;
   spaceType: SpaceType;
   confidenceScore: Prisma.Decimal;
   featureVector: Prisma.JsonValue;
