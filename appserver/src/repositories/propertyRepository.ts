@@ -292,6 +292,8 @@ export class PropertyRepository {
         country: true,
         status: true,
         zipCode: true,
+        latitude: true,
+        longitude: true,
         createdAt: true,
         updatedAt: true,
         _count: {

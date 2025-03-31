@@ -91,7 +91,7 @@ const imageChangeSchema = {
     changeType: { type: "string" },
     description: { type: "string", nullable: true },
     boundingBox: { type: "object", nullable: true },
-    confidenceScore: { type: "number" }, // Removed format: "decimal"
+    confidenceScore: { type: "number" },
     verified: { type: "boolean", default: false },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },

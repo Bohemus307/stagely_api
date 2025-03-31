@@ -48,7 +48,7 @@ const server = Fastify({
   trustProxy: true, // Trust proxies for proper client IP detection
   disableRequestLogging: false, // Enable request logging
   ignoreTrailingSlash: true, // Handle routes with or without trailing slash
-  connectionTimeout: 30000, // Connection timeout in ms
+  connectionTimeout: 120000, // Connection timeout in ms
   maxParamLength: 100, // Prevent excessive parameter length
 });
 
@@ -156,6 +156,8 @@ server.register(require("@fastify/swagger"), {
     produces: ["application/json"],
     tags: [
       { name: "properties", description: "Property management endpoints" },
+      { name: "incidents", description: "Incident management endpoints" },
+      { name: "inspections", description: "Inspection management endpoints" },
       {
         name: "property-spaces",
         description: "Property Spaces management endpoints",

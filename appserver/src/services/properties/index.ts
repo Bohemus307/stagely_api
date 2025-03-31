@@ -2,8 +2,6 @@ import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
 import {
   PropertyRepository,
   PropertyQueryParams,
-  PropertySearchParams,
-  PropertySearchResponse,
   PaginatedResponse,
   PropertyWithRelations,
   PropertyWithFullRelations,
@@ -11,7 +9,6 @@ import {
 } from "../../repositories/propertyRepository";
 import { NotFoundError } from "../../utils/errors";
 
-// Define property create/update input types with specific types
 export interface CreatePropertyInput {
   address: string;
   city: string;

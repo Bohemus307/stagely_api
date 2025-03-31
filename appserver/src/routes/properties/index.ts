@@ -588,7 +588,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      // Get user from auth token
       const user = await fastify.prisma.user.findUnique({
         where: { auth0Id: request?.user?.sub },
       });
