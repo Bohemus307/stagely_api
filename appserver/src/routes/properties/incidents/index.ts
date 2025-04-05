@@ -1086,21 +1086,55 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // POST /incidents/
+  // POST /incidents
   fastify.route({
     method: "POST",
     url: "/",
     onRequest: [fastify.authenticate],
     schema: {
       tags: ["incidents"],
-      description: "Analyze an image to detect and classify an incident",
-      summary: "AI analysis of incident image",
+      description: "Create a new incident with optional AI analysis",
+      summary: "Create incident",
       body: {
         type: "object",
         properties: {
           propertyId: { type: "integer" },
+          incidentType: { type: "string" },
+          description: { type: "string" },
+          reportedAt: { type: "string", format: "date-time" },
+          severity: {
+            type: "string",
+            enum: Object.values(IncidentSeverity),
+          },
+          spaceType: {
+            type: "string",
+            enum: Object.values(SpaceType),
+            nullable: true,
+          },
+          status: {
+            type: "string",
+            enum: Object.values(IncidentStatus),
+          },
           imageUrl: { type: "string" },
+          images: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                imageUrl: { type: "string" },
+                caption: { type: "string", nullable: true },
+                takenAt: { type: "string", format: "date-time" },
+                metadata: { type: "object", nullable: true },
+              },
+              required: ["imageUrl", "takenAt"],
+            },
+          },
         },
-        required: ["propertyId", "imageUrl"],
+        required: ["propertyId"],
+        anyOf: [
+          { required: ["imageUrl"] },
+          { required: ["incidentType", "description", "severity"] },
+        ],
       },
       response: {
         201: {
@@ -1125,75 +1159,16 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               enum: Object.values(SpaceType),
               nullable: true,
             },
-            featureVector: {
-              type: "object",
-              properties: {
-                dimensions: {
-                  type: "array",
-                  items: { type: "number" },
-                },
-                dominantColors: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-                detectedObjects: {
-                  type: "array",
-                  items: { type: "string" },
-                },
-              },
-            },
             aiClassified: { type: "boolean" },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
-            property: {
-              type: "object",
-              properties: {
-                id: { type: "integer" },
-                userId: { type: "integer" },
-                address: { type: "string" },
-                city: { type: "string" },
-                state: { type: "string", nullable: true },
-                zipCode: { type: "string", nullable: true },
-                country: { type: "string" },
-                latitude: { type: "number" },
-                longitude: { type: "number" },
-                status: { type: "string" },
-                incidentCount: { type: "integer" },
-                openIncidentCount: { type: "integer" },
-                lastIncidentAt: { type: "string", format: "date-time" },
-                createdAt: { type: "string", format: "date-time" },
-                updatedAt: { type: "string", format: "date-time" },
-              },
-            },
-            images: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "integer" },
-                  inspectionId: { type: "integer", nullable: true },
-                  spaceId: { type: "integer", nullable: true },
-                  incidentId: { type: "integer" },
-                  imageUrl: { type: "string" },
-                  caption: { type: "string", nullable: true },
-                  takenAt: { type: "string", format: "date-time" },
-                  metadata: { type: "object", nullable: true },
-                  featureVector: { type: "object", nullable: true },
-                  createdAt: { type: "string", format: "date-time" },
-                  updatedAt: { type: "string", format: "date-time" },
-                },
-              },
-            },
           },
         },
       },
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const { propertyId, imageUrl } = request.body as {
-        propertyId: number;
-        imageUrl: string;
-      };
+      const incidentData = request.body as any;
 
       try {
         // Get user from auth token
@@ -1207,21 +1182,54 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Verify the property belongs to the user
         const property = await fastify.prisma.property.findUnique({
-          where: { id: propertyId },
+          where: { id: incidentData.propertyId },
           select: { userId: true, id: true },
         });
 
         if (!property || property.userId !== user.id) {
           return sendUnauthorized(
             reply,
-            "You don't have permission to analyze incidents for this property",
+            "You don't have permission to add an incident to this property",
           );
         }
 
-        const incident = await incidentService.createIncidentFromImage(
-          propertyId,
-          imageUrl,
-        );
+        let incident;
+
+        // If imageUrl is provided, use the AI classification flow
+        if (incidentData.imageUrl) {
+          incident = await incidentService.createIncidentFromImage(
+            property.id,
+            incidentData.imageUrl,
+            incidentData.metadata,
+          );
+        }
+        // Otherwise use the standard create incident flow
+        else {
+          // Validate required fields for regular creation
+          if (
+            !incidentData.incidentType ||
+            !incidentData.description ||
+            !incidentData.severity
+          ) {
+            return reply.code(400).send({
+              error: {
+                statusCode: 400,
+                message:
+                  "When not providing an image URL, you must include incidentType, description, and severity",
+              },
+            });
+          }
+
+          incident = await incidentService.createIncident({
+            propertyId: property.id,
+            incidentType: incidentData.incidentType,
+            description: incidentData.description,
+            reportedAt: incidentData.reportedAt,
+            severity: incidentData.severity,
+            status: incidentData.status || IncidentStatus.Open,
+            images: incidentData.images,
+          });
+        }
 
         reply.code(201);
         return incident;
