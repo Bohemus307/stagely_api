@@ -75,6 +75,7 @@ export default async function s3Routes(
         "image/png",
         "image/gif",
         "image/webp",
+        "image/heic",
       ];
       if (!allowedTypes.includes(contentType)) {
         return reply.code(400).send({

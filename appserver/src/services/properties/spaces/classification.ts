@@ -85,52 +85,101 @@ export class SpaceClassificationService {
   };
 
   constructor(fastifyS3: { client: S3Client; bucket: string; region: string }) {
+    console.log(`[INIT] Initializing SpaceClassificationService`);
+    console.log(`[INIT] AWS Region: ${fastifyS3.region}`);
+    console.log(`[INIT] S3 Bucket: ${fastifyS3.bucket}`);
+
     this.rekognition = new RekognitionClient({
       region: fastifyS3.region,
-      // Add timeout configuration
-      // requestHandler: {
-      //   timeoutInMs: 15000, // 15 second timeout for Rekognition requests
-      // } as any,
+      // Enable timeout configuration
+      requestHandler: {
+        timeoutInMs: 15000, // 15 second timeout for Rekognition requests
+      } as any,
     });
     this.s3Client = fastifyS3.client;
     this.s3Bucket = fastifyS3.bucket;
+
+    console.log(`[INIT] Service initialized successfully`);
   }
 
   /**
    * Classify an image from its URL
    */
   async classifyImage(imageUrl: string): Promise<ClassificationResult> {
+    console.log(
+      `[CLASSIFY] Starting classification for image: ${imageUrl.substring(0, 50)}...`,
+    );
     try {
       // Check cache first
       const cacheKey = this.getCacheKey(imageUrl);
       if (this.cache.has(cacheKey)) {
+        console.log(`[CLASSIFY] Cache hit for ${cacheKey}`);
         return this.cache.get(cacheKey)!;
       }
+      console.log(`[CLASSIFY] Cache miss for ${cacheKey}`);
 
       // Extract S3 key from URL
       const key = this.extractS3Key(imageUrl);
+      console.log(`[CLASSIFY] Extracted S3 key: ${key}`);
 
       // Get optimized image data from S3
+      console.log(`[CLASSIFY] Fetching image from S3: ${key}`);
       const imageData = await this.getOptimizedImageFromS3(key);
+      console.log(
+        `[CLASSIFY] Image optimized from S3: ${key}, size: ${imageData.length} bytes`,
+      );
 
       // Analyze with Rekognition (with timeout)
-      const labels = await Promise.race([
-        this.detectLabels(imageData),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Rekognition timeout")), 20000),
-        ),
-      ]);
+      console.log(`[CLASSIFY] Starting Rekognition analysis for ${key}`);
+      let labels: Label[] = [];
+      try {
+        labels = await Promise.race([
+          this.detectLabels(imageData),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Rekognition timeout")), 20000),
+          ),
+        ]);
+        console.log(`Detected ${labels.length} labels with Rekognition`);
+      } catch (rekognitionError) {
+        console.error("Rekognition processing failed:", rekognitionError);
+        // Continue with empty labels instead of failing
+        labels = [];
+        console.log(`[CLASSIFY] Rekognition failed - using empty labels`);
+      }
 
       // Process labels to determine space type
+      console.log(
+        `[CLASSIFY] Processing ${labels.length} labels: ${labels.map((l) => l.Name).join(", ")}`,
+      );
       const result = this.processLabels(labels);
+      console.log(
+        `[CLASSIFY] Classification result: Space=${result.spaceType}, Confidence=${result.confidenceScore}`,
+      );
 
       // Cache the result
       this.cache.set(cacheKey, result);
+      console.log(`[CLASSIFY] Result cached for ${cacheKey}`);
 
       return result;
     } catch (error) {
-      console.error("Error classifying image:", error);
-      throw new Error(`Failed to classify image: ${error}`);
+      console.error(
+        `[CLASSIFY] ERROR classifying image: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error(
+        `[CLASSIFY] Full error stack: ${error instanceof Error ? error.stack : "No stack available"}`,
+      );
+
+      // Log environment info to help diagnose production issues
+      console.log(`[CLASSIFY] Environment: NODE_ENV=${process.env.NODE_ENV}`);
+      console.log(`[CLASSIFY] AWS Region: ${this.rekognition.config.region}`);
+
+      // Return a default result instead of throwing
+      return {
+        spaceType: SpaceType.Unknown,
+        confidenceScore: 0,
+        labels: [],
+        featureVector: {},
+      };
     }
   }
 
@@ -161,17 +210,42 @@ export class SpaceClassificationService {
    * Get image data from S3 with optimizations
    */
   private async getOptimizedImageFromS3(key: string): Promise<Buffer> {
+    console.log(`[S3] Fetching image: ${key}`);
     try {
       // Check S3 cache first
       const now = Date.now();
       if (this.s3Cache.has(key)) {
         const cached = this.s3Cache.get(key)!;
         if (now - cached.timestamp < this.S3_CACHE_TTL) {
+          console.log(
+            `[S3] Cache hit for ${key}, size: ${cached.buffer.length} bytes`,
+          );
           return cached.buffer;
         } else {
           // Expired, remove from cache
+          console.log(`[S3] Cache expired for ${key}`);
           this.s3Cache.delete(key);
         }
+      }
+      console.log(`[S3] Cache miss for ${key}`);
+
+      // Log the S3 bucket we're accessing
+      console.log(`[S3] Using bucket: ${this.s3Bucket}`);
+
+      // Check if the object exists
+      try {
+        const headCommand = new HeadObjectCommand({
+          Bucket: this.s3Bucket,
+          Key: key,
+        });
+        const headResult = await this.s3Client.send(headCommand);
+        console.log(
+          `[S3] Object exists, size: ${headResult.ContentLength || "unknown"} bytes, type: ${headResult.ContentType || "unknown"}`,
+        );
+      } catch (headError) {
+        console.error(
+          `[S3] Object HEAD check failed: ${headError instanceof Error ? headError.message : String(headError)}`,
+        );
       }
 
       // Try a faster approach first - get a partial range of the image
@@ -183,9 +257,14 @@ export class SpaceClassificationService {
           Range: "bytes=0-4194304", // First 4MB - enough for most images
         });
 
+        console.log(`[S3] Sending partial range request (0-4MB) for ${key}`);
+        const startTime = Date.now();
         const response = await this.s3Client.send(command);
+        const duration = Date.now() - startTime;
+        console.log(`[S3] Partial range request completed in ${duration}ms`);
 
         if (response.Body) {
+          console.log(`[S3] Processing response body stream`);
           // Convert stream to buffer efficiently
           const chunks: Buffer[] = [];
           for await (const chunk of response.Body as any) {
@@ -193,13 +272,16 @@ export class SpaceClassificationService {
           }
 
           const originalBuffer = Buffer.concat(chunks);
+          console.log(
+            `[S3] Stream converted to buffer, size: ${originalBuffer.length} bytes`,
+          );
 
           // Try to process this partial image
           try {
             // Resize the image for classification (smaller = faster processing)
             const resizedBuffer = await sharp(originalBuffer)
-              .resize(640, 640, { fit: "inside" })
-              .jpeg({ quality: 80 })
+              .resize(400, 400, { fit: "inside" }) // Smaller size for better performance
+              .jpeg({ quality: 70 }) // Lower quality for faster processing
               .toBuffer();
 
             // Cache the resized image
@@ -213,14 +295,16 @@ export class SpaceClassificationService {
           } catch (resizeError) {
             // If partial image couldn't be processed, fall back to full image
             console.warn(
-              `Partial image processing failed for ${key}, getting full image`,
+              `Partial image processing failed for ${key}, getting full image: ${resizeError}`,
             );
             // Continue to full image download below
           }
         }
       } catch (rangeError) {
         // Range request failed, fall back to full image
-        console.warn(`Range request failed for ${key}, getting full image`);
+        console.warn(
+          `Range request failed for ${key}, getting full image: ${rangeError}`,
+        );
       }
 
       // Fall back to getting the full image if needed
@@ -245,8 +329,8 @@ export class SpaceClassificationService {
 
       // Resize the full image
       const resizedBuffer = await sharp(fullBuffer)
-        .resize(640, 640, { fit: "inside" })
-        .jpeg({ quality: 80 })
+        .resize(400, 400, { fit: "inside" })
+        .jpeg({ quality: 70 })
         .toBuffer();
 
       // Cache the resized image
@@ -268,6 +352,10 @@ export class SpaceClassificationService {
    * Detect labels in an image using Rekognition with optimizations
    */
   private async detectLabels(imageData: Buffer): Promise<Label[]> {
+    console.log(
+      `[REKOGNITION] Starting label detection on image (${imageData.length} bytes)`,
+    );
+
     // Use optimized parameters for faster processing
     const command = new DetectLabelsCommand({
       Image: { Bytes: imageData },
@@ -276,14 +364,62 @@ export class SpaceClassificationService {
     });
 
     try {
+      console.log(`[REKOGNITION] Sending request to AWS Rekognition`);
+      const startTime = Date.now();
       const response = await this.rekognition.send(command);
+      const duration = Date.now() - startTime;
+      console.log(
+        `[REKOGNITION] Request successful, received ${response.Labels?.length || 0} labels in ${duration}ms`,
+      );
       return response.Labels || [];
     } catch (error) {
-      console.error("Rekognition error:", error);
+      console.error(
+        `[REKOGNITION] ERROR: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      console.error(
+        `[REKOGNITION] ERROR stack: ${error instanceof Error ? error.stack : "No stack available"}`,
+      );
+      console.error(
+        `[REKOGNITION] ERROR name: ${error instanceof Error ? error.name : "Unknown"}`,
+      );
+      console.log(`[REKOGNITION] Waiting 500ms before retry attempt`);
+
+      // Check specifically for common AWS errors
+      if (error instanceof Error) {
+        if (error.name === "TimeoutError") {
+          console.error(
+            `[REKOGNITION] Timeout occurred - check network connectivity to AWS services`,
+          );
+        } else if (error.name === "AccessDeniedException") {
+          console.error(`[REKOGNITION] Access denied - check IAM permissions`);
+        } else if (error.name === "ThrottlingException") {
+          console.error(`[REKOGNITION] Rate limit exceeded`);
+        }
+      }
+
       // Wait a short time before retrying once in case of rate limiting
       await new Promise((resolve) => setTimeout(resolve, 500));
-      const response = await this.rekognition.send(command);
-      return response.Labels || [];
+
+      try {
+        // Add explicit try/catch for the retry
+        console.log(`[REKOGNITION] Retrying Rekognition request`);
+        const retryStartTime = Date.now();
+        const response = await this.rekognition.send(command);
+        const retryDuration = Date.now() - retryStartTime;
+        console.log(
+          `[REKOGNITION] Retry successful, received ${response.Labels?.length || 0} labels in ${retryDuration}ms`,
+        );
+        return response.Labels || [];
+      } catch (retryError) {
+        console.error(
+          `[REKOGNITION] RETRY ERROR: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
+        );
+        console.error(
+          `[REKOGNITION] RETRY ERROR stack: ${retryError instanceof Error ? retryError.stack : "No stack available"}`,
+        );
+        // Return empty array instead of failing
+        return [];
+      }
     }
   }
 

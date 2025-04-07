@@ -24,12 +24,16 @@ const s3Plugin: FastifyPluginAsync<S3PluginOptions> = async (
     );
   }
 
+  if (!process.env.ACCESS_KEY || !process.env.SECRET_ACCESS_KEY) {
+    throw new Error("AWS credentials not found in environment");
+  }
+
   // Create S3 client
   const s3Client = new S3Client({
     region,
     credentials: {
-      accessKeyId: process.env.ACCESS_KEY || "noS3creds",
-      secretAccessKey: process.env.SECRET_ACCESS_KEY || "noS3creds",
+      accessKeyId: process.env.ACCESS_KEY,
+      secretAccessKey: process.env.SECRET_ACCESS_KEY,
     },
   });
 
