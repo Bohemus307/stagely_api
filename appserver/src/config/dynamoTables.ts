@@ -3,9 +3,9 @@ import { AttributeType, BillingMode, ProjectionType, StreamViewType } from 'aws-
 
 /**
  * Names of all DynamoDB tables used in the messaging system
+ * Note: Removed redundant USERS table - we'll use Postgres user data instead
  */
 export const TableNames = {
-  USERS: 'stagely-users',
   PROPERTY_USERS: 'stagely-property-users',
   CONVERSATIONS: 'stagely-conversations',
   MESSAGES: 'stagely-messages',
@@ -15,23 +15,10 @@ export const TableNames = {
 
 /**
  * Complete table definitions for CDK deployment
+ * Note: Removed redundant USERS table to avoid duplication with Postgres
  */
 export const TableDefinitions = {
-  // Users Table
-  USERS: {
-    tableName: TableNames.USERS,
-    partitionKey: {
-      name: 'userId',
-      type: AttributeType.STRING
-    },
-    billingMode: BillingMode.PAY_PER_REQUEST,
-    timeToLiveAttribute: 'ttl',
-    pointInTimeRecovery: true,
-    stream: StreamViewType.NEW_AND_OLD_IMAGES,
-    removalPolicy: 'DESTROY' // Change to RETAIN for production
-  },
-
-  // Property Users Table
+  // Property Users Table - Associates users with properties
   PROPERTY_USERS: {
     tableName: TableNames.PROPERTY_USERS,
     partitionKey: {
@@ -139,7 +126,7 @@ export const TableDefinitions = {
     removalPolicy: 'DESTROY' // Change to RETAIN for production
   },
 
-  // WebSocket Connections Table
+  // WebSocket Connections Table - Real-time messaging connections
   CONNECTIONS: {
     tableName: TableNames.CONNECTIONS,
     partitionKey: {
@@ -161,7 +148,7 @@ export const TableDefinitions = {
     removalPolicy: 'DESTROY' // This is appropriate for connection data
   },
 
-  // Message Read Receipts Table
+  // Message Read Receipts Table - Tracks which messages have been read
   MESSAGE_READ_RECEIPTS: {
     tableName: TableNames.MESSAGE_READ_RECEIPTS,
     partitionKey: {
@@ -190,30 +177,19 @@ export const TableDefinitions = {
 
 /**
  * Sample DynamoDB record schemas (for documentation/reference)
+ * Note: Removed USER sample and updated references to use Postgres user IDs
  */
 export const SampleRecords = {
-  USER: {
-    userId: "auth0|123456789", // Auth0 user ID as string
-    email: "user@example.com",
-    firstName: "John",
-    lastName: "Doe",
-    profilePictureUrl: "https://example.com/profile.jpg",
-    lastSeen: 1618048800000, // timestamp in milliseconds
-    createdAt: 1617048800000,
-    updatedAt: 1618048800000,
-    ttl: 1649584800 // Optional TTL in seconds since epoch
-  },
-
   PROPERTY_USER: {
     id: "1#42", // Composite "userId#propertyId"
-    userId: 1,
+    userId: 1,   // References Postgres users.user_id
     propertyId: 42,
     joinedAt: 1617048800000
   },
 
   CONVERSATION: {
     conversationId: "conv_123456789",
-    participants: [1, 2, 3], // User IDs as numbers
+    participants: [1, 2, 3], // User IDs from Postgres users table
     propertyId: 42,
     propertyAddress: "123 Main St, Anytown, CA",
     conversationType: "property_related", // or "incident_related", "general"
@@ -234,7 +210,7 @@ export const SampleRecords = {
   MESSAGE: {
     messageId: "msg_123456789",
     conversationId: "conv_123456789",
-    senderId: 1,
+    senderId: 1,  // References Postgres users.user_id
     text: "When will the plumber arrive?",
     timestamp: 1618048800000,
     status: {
@@ -245,7 +221,7 @@ export const SampleRecords = {
 
   CONNECTION: {
     connectionId: "conn_123456789",
-    userId: 1,
+    userId: 1,  // References Postgres users.user_id
     deviceId: "device_123",
     timestamp: 1618048800000,
     ttl: 1618135200 // 24 hours later in seconds since epoch
@@ -253,7 +229,7 @@ export const SampleRecords = {
 
   MESSAGE_READ_RECEIPT: {
     receiptId: "1#msg_123456789", // Composite "userId#messageId"
-    userId: 1,
+    userId: 1,  // References Postgres users.user_id
     messageId: "msg_123456789",
     conversationId: "conv_123456789",
     timestamp: 1618048800000

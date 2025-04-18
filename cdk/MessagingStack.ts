@@ -10,8 +10,6 @@ export interface MessagingStackProps extends cdk.StackProps {
 }
 
 export class MessagingStack extends cdk.Stack {
-  public readonly userTable: dynamodb.Table;
-  public readonly propertyUsersTable: dynamodb.Table;
   public readonly conversationsTable: dynamodb.Table;
   public readonly messagesTable: dynamodb.Table;
   public readonly connectionsTable: dynamodb.Table;
@@ -24,50 +22,6 @@ export class MessagingStack extends cdk.Stack {
     const isProd = props.deploymentEnv === "production";
     const removalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
 
-    // Create the Users table
-    this.userTable = new dynamodb.Table(this, `${APP_NAME}-UsersTable`, {
-      tableName: `${TableNames.USERS}-${props.deploymentEnv}`,
-      partitionKey: {
-        name: 'userId',
-        type: dynamodb.AttributeType.STRING
-      },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      timeToLiveAttribute: 'ttl',
-      pointInTimeRecovery: isProd,
-      removalPolicy: removalPolicy,
-      stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
-    });
-
-    // Create the Property Users table
-    this.propertyUsersTable = new dynamodb.Table(this, `${APP_NAME}-PropertyUsersTable`, {
-      tableName: `${TableNames.PROPERTY_USERS}-${props.deploymentEnv}`,
-      partitionKey: {
-        name: 'id',
-        type: dynamodb.AttributeType.STRING
-      },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: isProd,
-      removalPolicy: removalPolicy
-    });
-
-    // Add GSIs to Property Users table
-    this.propertyUsersTable.addGlobalSecondaryIndex({
-      indexName: 'userId-index',
-      partitionKey: {
-        name: 'userId',
-        type: dynamodb.AttributeType.NUMBER
-      },
-      projectionType: dynamodb.ProjectionType.ALL
-    });
-
-    this.propertyUsersTable.addGlobalSecondaryIndex({
-      indexName: 'propertyId-index',
-      partitionKey: {
-        name: 'propertyId',
-        type: dynamodb.AttributeType.NUMBER
-      },
-      projectionType: dynamodb.ProjectionType.ALL
-    });
 
     // Create the Conversations table
     this.conversationsTable = new dynamodb.Table(this, `${APP_NAME}-ConversationsTable`, {
@@ -149,7 +103,7 @@ export class MessagingStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
-    // Create the Connections table (for WebSocket)
+    // Create the Connections table to get userID
     this.connectionsTable = new dynamodb.Table(this, `${APP_NAME}-ConnectionsTable`, {
       tableName: `${TableNames.CONNECTIONS}-${props.deploymentEnv}`,
       partitionKey: {
@@ -198,17 +152,6 @@ export class MessagingStack extends cdk.Stack {
     });
 
     // Output the table names
-    new cdk.CfnOutput(this, 'UsersTableName', {
-      value: this.userTable.tableName,
-      description: 'DynamoDB Users Table Name',
-      exportName: `${APP_NAME}-${props.deploymentEnv}-UsersTableName`,
-    });
-
-    new cdk.CfnOutput(this, 'PropertyUsersTableName', {
-      value: this.propertyUsersTable.tableName,
-      description: 'DynamoDB Property Users Table Name',
-      exportName: `${APP_NAME}-${props.deploymentEnv}-PropertyUsersTableName`,
-    });
 
     new cdk.CfnOutput(this, 'ConversationsTableName', {
       value: this.conversationsTable.tableName,
