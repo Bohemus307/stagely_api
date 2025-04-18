@@ -15,8 +15,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.788.0",
     "@aws-sdk/client-rekognition": "^3.758.0",
     "@aws-sdk/client-s3": "^3.758.0",
+    "@aws-sdk/lib-dynamodb": "^3.789.0",
     "@fastify/autoload": "^6.2.0",
     "@fastify/compress": "^8.0.1",
     "@fastify/cors": "^11.0.0",
