@@ -16,6 +16,7 @@ import healthPlugin from "./plugins/healthPlugin";
 import prismaPlugin from "./plugins/prismaPlugin";
 import auth0Plugin from "./plugins/auth0Plugin";
 import s3Plugin from "./plugins/s3Plugin";
+import dynamoDB from "./plugins/dynamoDB";
 
 // Load environment variables from .env file
 config();
@@ -198,6 +199,7 @@ server.register(require("@fastify/swagger-ui"), {
 server.register(prismaPlugin);
 server.register(healthPlugin);
 server.register(s3Plugin);
+server.register(dynamoDB);
 
 server.register(auth0Plugin, {
   domain: serverConfig.DOMAIN,
