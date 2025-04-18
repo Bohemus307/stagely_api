@@ -126,6 +126,15 @@ export class ConfiguredFargateGateway extends Construct {
       }
     );
 
+    this.fargateService.targetGroup.configureHealthCheck({
+      path: "/health",
+      timeout: Duration.seconds(5),
+      interval: Duration.seconds(30),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+      healthyHttpCodes: "200-299",
+    });
+
     /**
      * Set the service URL and create a CloudFormation output.
      */

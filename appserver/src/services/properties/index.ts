@@ -1,5 +1,4 @@
-// src/services/property-service.ts
-import { PrismaClient, Property, PropertyStatus } from "@prisma/client";
+import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
 import {
   PropertyRepository,
   PropertyQueryParams,
@@ -8,33 +7,29 @@ import {
   PropertyWithFullRelations,
   UserPropertyStats,
 } from "../../repositories/propertyRepository";
-import { UnauthorizedError } from "../../utils/errors";
+import { NotFoundError } from "../../utils/errors";
 
-// Define property create/update input types
-export interface CreatePropertyInput
-  extends Omit<
-    Property,
-    | "id"
-    | "createdAt"
-    | "updatedAt"
-    | "incidentCount"
-    | "openIncidentCount"
-    | "lastIncidentAt"
-  > {}
+export interface CreatePropertyInput {
+  address: string;
+  city: string;
+  state?: string | null;
+  zipCode?: string | null;
+  country: string;
+  latitude: number | Prisma.Decimal;
+  longitude: number | Prisma.Decimal;
+  status?: PropertyStatus;
+}
 
-export interface UpdatePropertyInput
-  extends Partial<
-    Omit<
-      Property,
-      | "id"
-      | "userId"
-      | "createdAt"
-      | "updatedAt"
-      | "incidentCount"
-      | "openIncidentCount"
-      | "lastIncidentAt"
-    >
-  > {}
+export interface UpdatePropertyInput {
+  address?: string;
+  city?: string;
+  state?: string | null;
+  zipCode?: string | null;
+  country?: string;
+  latitude?: number | Prisma.Decimal;
+  longitude?: number | Prisma.Decimal;
+  status?: PropertyStatus;
+}
 
 /**
  * Service for property-related business logic
@@ -56,20 +51,36 @@ export class PropertyService {
   }
 
   /**
-   * Get a property by ID with authorization check
+   * Search properties by query string
+   *
+   * @param query - The search term (optional)
+   * @param userId - The ID of the user whose properties to search
+   * @param page - Page number
+   * @param limit - Number of results per page
+   * @returns Paginated response of matching properties
    */
-  async getPropertyById(
-    id: number,
+  async searchProperties(
+    query: string = "",
     userId: number,
-    isAdmin: boolean = false,
-  ): Promise<PropertyWithFullRelations> {
+    page: number = 1,
+    limit: number = 10,
+  ): Promise<PaginatedResponse<any>> {
+    return this.propertyRepo.searchProperties({
+      query,
+      userId,
+      page,
+      limit,
+    });
+  }
+
+  /**
+   * Get a property by ID
+   */
+  async getPropertyById(id: number): Promise<PropertyWithFullRelations> {
     const property = await this.propertyRepo.getPropertyById(id);
 
-    // Authorization check - only owner or admin can access property details
-    if (!isAdmin && property.userId !== userId) {
-      throw new UnauthorizedError(
-        "You do not have permission to access this property",
-      );
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
     return property;
@@ -83,82 +94,57 @@ export class PropertyService {
     userId: number,
   ): Promise<Property> {
     // Business logic validations can go here
-    // For example, geocoding the address if not provided
-    let finalData = { ...data };
+    const finalData = {
+      ...data,
+      status: data.status || PropertyStatus.Active,
+    };
 
-    if (!data.latitude || !data.longitude) {
-      // You would use a geocoding service here
-      // For example: const coordinates = await geocodeAddress(data.address, data.city);
-      // finalData.latitude = coordinates.latitude;
-      // finalData.longitude = coordinates.longitude;
-    }
-
-    return this.propertyRepo.createProperty(
-      {
-        ...finalData,
-        status: data.status || PropertyStatus.Active,
-      },
-      userId,
-    );
+    return this.propertyRepo.createProperty(finalData, userId);
   }
 
   /**
-   * Update a property with authorization check
+   * Update a property
    */
   async updateProperty(
     id: number,
     data: UpdatePropertyInput,
-    userId: number,
-    isAdmin: boolean = false,
   ): Promise<Property> {
-    // First check if property exists and user has access
+    // First check if property exists
     const property = await this.propertyRepo.getPropertyById(id);
 
-    if (!isAdmin && property.userId !== userId) {
-      throw new UnauthorizedError(
-        "You do not have permission to update this property",
-      );
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
     return this.propertyRepo.updateProperty(id, data);
   }
 
   /**
-   * Change property status with authorization check
+   * Change property status
    */
   async changePropertyStatus(
     id: number,
     status: PropertyStatus,
-    userId: number,
-    isAdmin: boolean = false,
   ): Promise<Property> {
-    // First check if property exists and user has access
+    // First check if property exists
     const property = await this.propertyRepo.getPropertyById(id);
 
-    if (!isAdmin && property.userId !== userId) {
-      throw new UnauthorizedError(
-        "You do not have permission to update this property",
-      );
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
     return this.propertyRepo.updateProperty(id, { status });
   }
 
   /**
-   * Delete a property with authorization check
+   * Delete a property
    */
-  async deleteProperty(
-    id: number,
-    userId: number,
-    isAdmin: boolean = false,
-  ): Promise<Property> {
-    // First check if property exists and user has access
+  async deleteProperty(id: number): Promise<Property> {
+    // First check if property exists
     const property = await this.propertyRepo.getPropertyById(id);
 
-    if (!isAdmin && property.userId !== userId) {
-      throw new UnauthorizedError(
-        "You do not have permission to delete this property",
-      );
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
     return this.propertyRepo.deleteProperty(id);
@@ -169,5 +155,44 @@ export class PropertyService {
    */
   async getUserPropertyStats(userId: number): Promise<UserPropertyStats> {
     return this.propertyRepo.getUserPropertyStats(userId);
+  }
+
+  /**
+   * Get property spaces
+   */
+  async getPropertySpaces(propertyId: number) {
+    const property = await this.propertyRepo.getPropertyById(propertyId);
+
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${propertyId} not found`);
+    }
+
+    return this.propertyRepo.getPropertySpaces(propertyId);
+  }
+
+  /**
+   * Get property inspections
+   */
+  async getPropertyInspections(propertyId: number) {
+    const property = await this.propertyRepo.getPropertyById(propertyId);
+
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${propertyId} not found`);
+    }
+
+    return this.propertyRepo.getPropertyInspections(propertyId);
+  }
+
+  /**
+   * Get property incidents
+   */
+  async getPropertyIncidents(propertyId: number) {
+    const property = await this.propertyRepo.getPropertyById(propertyId);
+
+    if (!property) {
+      throw new NotFoundError(`Property with ID ${propertyId} not found`);
+    }
+
+    return this.propertyRepo.getPropertyIncidents(propertyId);
   }
 }

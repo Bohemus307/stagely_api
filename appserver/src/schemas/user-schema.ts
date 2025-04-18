@@ -8,11 +8,6 @@ const userBaseSchema = {
     firstName: { type: "string" },
     lastName: { type: "string" },
     phone: { type: "string" },
-    role: {
-      type: "string",
-      enum: ["user", "admin", "manager"],
-      default: "user",
-    },
     profilePictureUrl: { type: "string", format: "uri" },
   },
 };
@@ -86,7 +81,6 @@ export const usersResponseSchema = {
           firstName: { type: "string" },
           lastName: { type: "string" },
           phone: { type: "string" },
-          role: { type: "string" },
           profilePictureUrl: { type: "string", format: "uri" },
           lastLogin: { type: "string", format: "date-time" },
           createdAt: { type: "string", format: "date-time" },

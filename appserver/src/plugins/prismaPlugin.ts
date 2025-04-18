@@ -51,7 +51,7 @@ async function prismaPlugin(
   fastify.decorate("prisma", prisma);
 }
 
-module.exports = fp(prismaPlugin, {
+export default fp(prismaPlugin, {
   name: "prisma",
   fastify: "5.2.1",
 });

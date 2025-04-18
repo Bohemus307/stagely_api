@@ -3,7 +3,6 @@ import { Construct } from "constructs";
 import { ConfiguredFargateGateway } from "./ConfiguredFargateLoadBalancedApplicationWithSSL";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as ssm from "aws-cdk-lib/aws-ssm";
 import { aws_certificatemanager as acm } from "aws-cdk-lib";
 import { HostedZone } from "aws-cdk-lib/aws-route53";
 import setupCodeBuild from "./setupCodeBuild";
@@ -34,12 +33,16 @@ export enum AppEnvironment {
 
 // Add interface for ComputeStack props
 export interface ComputeStackProps extends cdk.StackProps {
-  vpc: ec2.IVpc;
+  vpcId: string; // Changed from vpc: ec2.IVpc
 }
 
 export class ComputeStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
+
+    const vpc = ec2.Vpc.fromLookup(this, "ImportedVPC", {
+      vpcId: props.vpcId,
+    });
 
     const ssmParamsConfig = (appEnv: AppEnvironment) => {
       return [
@@ -73,6 +76,16 @@ export class ComputeStack extends cdk.Stack {
           envKey: "S3_BUCKET_NAME",
           description: `s3 bucket name for ${appEnv}`,
         },
+        {
+          name: `/auth0/audience-${appEnv}`,
+          envKey: "AUTH0_AUDIENCE",
+          description: `audience value for auth0 api ${appEnv}`,
+        },
+        {
+          name: `/auth0/domain-${appEnv}`,
+          envKey: "AUTH0_DOMAIN",
+          description: `auth0 domain value for ${appEnv}`,
+        },
       ];
     };
 
@@ -98,10 +111,6 @@ export class ComputeStack extends cdk.Stack {
       domainName: `*.${HOSTED_ZONE_NAME}`,
       validation: acm.CertificateValidation.fromDns(hostedZone),
     });
-
-    // Import the VPC created by the database stack
-    // Use VPC from props or import it
-    const vpc: ec2.IVpc = props.vpc;
 
     const executionRolePolicy = new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,

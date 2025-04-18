@@ -1,12 +1,11 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import { FastifyInstance } from "fastify";
 import { PropertyStatus } from "@prisma/client";
-import { NotFoundError, UnauthorizedError } from "../../utils/errors";
-import { PropertyService } from "../../services/properties";
+import { NotFoundError } from "../../utils/errors";
+
 import {
-  sendUnauthorized,
   sendNotFound,
-  sendForbidden,
   sendConflict,
+  sendUnauthorized,
 } from "../../utils/responses";
 import {
   propertiesResponseSchema,
@@ -14,6 +13,7 @@ import {
   createPropertySchema,
   updatePropertySchema,
 } from "../../schemas/property-schema";
+import { PropertyService } from "../../services/properties";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -22,41 +22,6 @@ interface ParamsWithId {
 
 interface StatusUpdateBody {
   status: PropertyStatus;
-}
-
-// Define user JWT payload type
-interface JwtUser {
-  userId: number;
-  role: string;
-}
-
-// Declare jwt for fastify request
-declare module "fastify" {
-  interface FastifyRequest {
-    user: JwtUser;
-  }
-}
-
-/**
- * Simple JWT verification middleware
- */
-async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    // Your actual JWT verification logic would go here
-    // For example: await request.jwtVerify();
-
-    // If you don't have the jwtVerify method, you can check the authorization header manually:
-    const authHeader = request.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return sendUnauthorized(reply);
-    }
-
-    // Manually parse and verify the token
-    // This is just a placeholder, you should implement proper JWT verification
-    // request.user = { userId: 1, role: "admin" }; // Set from decoded token
-  } catch (err) {
-    return sendUnauthorized(reply);
-  }
 }
 
 /**
@@ -69,11 +34,116 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
   const propertyService = new PropertyService(fastify.prisma);
 
+  // GET /properties/search
+  fastify.route({
+    method: "GET",
+    url: "/search",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["properties"],
+      description: "Search for properties by address, city, country, etc.",
+      summary: "Search properties",
+      querystring: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Search query (optional)",
+          },
+          page: {
+            type: "integer",
+            minimum: 1,
+            default: 1,
+            description: "Page number",
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            default: 10,
+            description: "Number of items per page",
+          },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            data: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "integer" },
+                  address: { type: "string" },
+                  city: { type: "string" },
+                  state: { type: "string", nullable: true },
+                  country: { type: "string" },
+                  zipCode: { type: "string", nullable: true },
+                  status: {
+                    type: "string",
+                    enum: Object.values(PropertyStatus),
+                  },
+                  createdAt: { type: "string", format: "date-time" },
+                  updatedAt: { type: "string", format: "date-time" },
+                  _count: {
+                    type: "object",
+                    properties: {
+                      incidents: { type: "integer" },
+                      inspections: { type: "integer" },
+                      spaces: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+            meta: {
+              type: "object",
+              properties: {
+                page: { type: "integer" },
+                limit: { type: "integer" },
+                total: { type: "integer" },
+                totalPages: { type: "integer" },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { query, page, limit } = request.query as {
+        query?: string;
+        page?: string;
+        limit?: string;
+      };
+
+      // Get user from auth token
+      const user = await fastify.prisma.user.findUnique({
+        where: { auth0Id: request?.user?.sub },
+      });
+
+      if (!user) {
+        return sendUnauthorized(reply, "User not found");
+      }
+
+      // Search for properties, restricting to those owned by the current user
+      const results = await propertyService.searchProperties(
+        query,
+        user.id,
+        page ? parseInt(page) : undefined,
+        limit ? parseInt(limit) : undefined,
+      );
+
+      return results;
+    },
+  });
+
   // GET /properties
   fastify.route({
     method: "GET",
     url: "/",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Get a list of properties with optional filtering",
@@ -113,28 +183,34 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             default: "desc",
             description: "Sort order (ascending or descending)",
           },
+          search: {
+            type: "string",
+            description: "Search term for property address or location",
+          },
         },
       },
       response: {
         200: propertiesResponseSchema,
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
+      // Get user from auth token
+      const user = await fastify.prisma.user.findUnique({
+        where: { auth0Id: request?.user?.sub },
+      });
 
-      // If not admin, add filter to only show user's properties
-      const queryParams = { ...(request.query as object) };
-      if (!isAdmin) {
-        (queryParams as any).userId = userId;
+      if (!user) {
+        return sendUnauthorized(reply, "User not found");
       }
 
-      const result = await propertyService.getProperties(queryParams as any);
+      // Add userId to query params
+      const queryParams = {
+        ...(request.query as any),
+        userId: user.id,
+      };
+
+      const result = await propertyService.getProperties(queryParams);
       return result;
     },
   });
@@ -143,7 +219,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/:id",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Get a single property by ID",
@@ -169,43 +245,31 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
 
       try {
-        const property = await propertyService.getPropertyById(
-          parseInt(id),
-          userId,
-          isAdmin,
-        );
+        const property = await propertyService.getPropertyById(parseInt(id));
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || property.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to access this property",
+          );
+        }
+
         return property;
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -216,7 +280,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "POST",
     url: "/",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Create a new property",
@@ -240,19 +304,22 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           },
         },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
-
       try {
+        // Get the user from the database based on Auth0 ID
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user) {
+          return sendUnauthorized(reply, "User not found");
+        }
+
         const property = await propertyService.createProperty(
           request.body as any,
-          userId,
+          user.id,
         );
 
         reply.code(201);
@@ -277,7 +344,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "PUT",
     url: "/:id",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Update an existing property",
@@ -304,45 +371,39 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
 
       try {
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to update this property",
+          );
+        }
+
         const property = await propertyService.updateProperty(
           parseInt(id),
           request.body as any,
-          userId,
-          isAdmin,
         );
 
         return property;
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -353,7 +414,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "PATCH",
     url: "/:id/status",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Update property status",
@@ -390,46 +451,40 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
       const { status } = request.body as StatusUpdateBody;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
 
       try {
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to update this property",
+          );
+        }
+
         const property = await propertyService.changePropertyStatus(
           parseInt(id),
           status,
-          userId,
-          isAdmin,
         );
 
         return property;
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -440,7 +495,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "DELETE",
     url: "/:id",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Delete a property",
@@ -472,40 +527,36 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             },
           },
         },
-        403: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 403 },
-                message: { type: "string", example: "Access denied" },
-              },
-            },
-          },
-        },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       const { id } = request.params as ParamsWithId;
-      const userId = request.user.userId;
-      const isAdmin = request.user.role === "admin";
 
       try {
-        await propertyService.deleteProperty(parseInt(id), userId, isAdmin);
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to delete this property",
+          );
+        }
+
+        await propertyService.deleteProperty(parseInt(id));
 
         return { success: true, id: parseInt(id) };
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "Property not found");
-        }
-        if (err instanceof UnauthorizedError) {
-          return sendForbidden(reply, err.message);
         }
         throw err;
       }
@@ -516,7 +567,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.route({
     method: "GET",
     url: "/stats",
-    onRequest: authenticate,
+    onRequest: [fastify.authenticate],
     schema: {
       tags: ["properties"],
       description: "Get statistics about user properties",
@@ -525,36 +576,284 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         200: {
           type: "object",
           properties: {
-            propertiesByStatus: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  status: { type: "string", example: "ACTIVE" },
-                  _count: { type: "integer", example: 5 },
+            totalProperties: { type: "integer", example: 10 },
+            activeProperties: { type: "integer", example: 7 },
+            maintenanceProperties: { type: "integer", example: 2 },
+            archivedProperties: { type: "integer", example: 1 },
+            totalIncidents: { type: "integer", example: 15 },
+            openIncidents: { type: "integer", example: 3 },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const user = await fastify.prisma.user.findUnique({
+        where: { auth0Id: request?.user?.sub },
+      });
+
+      if (!user) {
+        return sendUnauthorized(reply, "User not found");
+      }
+
+      const stats = await propertyService.getUserPropertyStats(user.id);
+      return stats;
+    },
+  });
+
+  // Additional routes for spaces, inspections, and incidents
+
+  // GET /properties/:id/spaces
+  fastify.route({
+    method: "GET",
+    url: "/:id/spaces",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["properties"],
+      description: "Get spaces for a property",
+      summary: "Get property spaces",
+      params: {
+        type: "object",
+        properties: {
+          id: { type: "string", pattern: "^\\d+$", description: "Property ID" },
+        },
+        required: ["id"],
+      },
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              name: { type: "string" },
+              type: { type: "string" },
+              aiGenerated: { type: "boolean" },
+              confidenceScore: { type: "number" },
+              images: {
+                type: "array",
+                items: {
+                  type: "object",
                 },
               },
             },
-            openIncidentsCount: { type: "integer", example: 3 },
-            recentIncidents: {
-              type: "array",
-              items: {
-                type: "object",
+          },
+        },
+        404: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 404 },
+                message: { type: "string", example: "Property not found" },
               },
             },
           },
         },
       },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      const userId = request.user.userId;
-      const stats = await propertyService.getUserPropertyStats(userId);
-      return stats;
+      const { id } = request.params as ParamsWithId;
+
+      try {
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to access this property",
+          );
+        }
+
+        const spaces = await propertyService.getPropertySpaces(parseInt(id));
+        return spaces;
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, "Property not found");
+        }
+        throw err;
+      }
+    },
+  });
+
+  // GET /properties/:id/inspections
+  fastify.route({
+    method: "GET",
+    url: "/:id/inspections",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["properties"],
+      description: "Get inspections for a property",
+      summary: "Get property inspections",
+      params: {
+        type: "object",
+        properties: {
+          id: { type: "string", pattern: "^\\d+$", description: "Property ID" },
+        },
+        required: ["id"],
+      },
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              title: { type: "string" },
+              description: { type: "string" },
+              inspectionDate: { type: "string", format: "date-time" },
+              photos: {
+                type: "array",
+                items: {
+                  type: "object",
+                },
+              },
+            },
+          },
+        },
+        404: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 404 },
+                message: { type: "string", example: "Property not found" },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params as ParamsWithId;
+
+      try {
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to access this property",
+          );
+        }
+
+        const inspections = await propertyService.getPropertyInspections(
+          parseInt(id),
+        );
+        return inspections;
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, "Property not found");
+        }
+        throw err;
+      }
+    },
+  });
+
+  // GET /properties/:id/incidents
+  fastify.route({
+    method: "GET",
+    url: "/:id/incidents",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["properties"],
+      description: "Get incidents for a property",
+      summary: "Get property incidents",
+      params: {
+        type: "object",
+        properties: {
+          id: { type: "string", pattern: "^\\d+$", description: "Property ID" },
+        },
+        required: ["id"],
+      },
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "integer" },
+              incidentType: { type: "string" },
+              description: { type: "string" },
+              reportedAt: { type: "string", format: "date-time" },
+              resolvedAt: { type: "string", format: "date-time" },
+              severity: { type: "string" },
+              status: { type: "string" },
+              images: {
+                type: "array",
+                items: {
+                  type: "object",
+                },
+              },
+            },
+          },
+        },
+        404: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 404 },
+                message: { type: "string", example: "Property not found" },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { id } = request.params as ParamsWithId;
+
+      try {
+        // First check if property exists
+        const existingProperty = await propertyService.getPropertyById(
+          parseInt(id),
+        );
+
+        // Verify property belongs to authenticated user
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user || existingProperty.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to access this property",
+          );
+        }
+
+        const incidents = await propertyService.getPropertyIncidents(
+          parseInt(id),
+        );
+        return incidents;
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, "Property not found");
+        }
+        throw err;
+      }
     },
   });
 }
