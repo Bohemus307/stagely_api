@@ -9,7 +9,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from 'uuid';
 import { TableNames } from "../../config/dynamoTables";
-
+import { ReturnValue } from "@aws-sdk/client-dynamodb";
 
 export interface DynamoDBMessage {
   messageId: string;
@@ -137,7 +137,7 @@ export class DynamoDBMessageRepository {
       ExpressionAttributeValues: {
         ':status': status
       },
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: ReturnValue.ALL_NEW
     };
 
     const result = await this.documentClient.send(new UpdateCommand(params));
@@ -147,49 +147,53 @@ export class DynamoDBMessageRepository {
   /**
    * Update message status for multiple messages
    */
-  async batchUpdateMessageStatus(
-    messageInfos: Array<{ messageId: string, conversationId: string }>,
-    userId: number,
-    status: 'SENT' | 'DELIVERED' | 'READ'
-  ): Promise<void> {
-    const userIdStr = userId.toString();
+ 
+async batchUpdateMessageStatus(
+  messageInfos: Array<{ messageId: string, conversationId: string }>,
+  userId: number,
+  status: 'SENT' | 'DELIVERED' | 'READ'
+): Promise<void> {
+  const userIdStr = userId.toString();
 
-    // DynamoDB batch operations are limited to 25 items per request
-    const batchSize = 25;
+  // DynamoDB batch operations are limited to 25 items per request
+  const batchSize = 25;
 
-    for (let i = 0; i < messageInfos.length; i += batchSize) {
-      const batch = messageInfos.slice(i, i + batchSize);
+  for (let i = 0; i < messageInfos.length; i += batchSize) {
+    const batch = messageInfos.slice(i, i + batchSize);
 
-      const updates = await Promise.all(
-        batch.map(async ({ messageId, conversationId }) => {
-          const message = await this.getMessageById(messageId, conversationId);
-          if (!message) return null;
+    const updates = await Promise.all(
+      batch.map(async ({ messageId, conversationId }) => {
+        const message = await this.getMessageById(messageId, conversationId);
+        if (!message) return null;
 
-          message.status[userIdStr] = status;
+        message.status[userIdStr] = status;
 
-          return {
-            PutRequest: {
-              Item: message
-            }
-          };
-        })
-      );
-
-      // Filter out nulls (messages that weren't found)
-      const validUpdates = updates.filter(Boolean);
-
-      if (validUpdates.length > 0) {
-        const params = {
-          RequestItems: {
-            [this.tableName]: validUpdates
+        return {
+          PutRequest: {
+            Item: message
           }
         };
+      })
+    );
 
-        await this.documentClient.send(new BatchWriteCommand(params));
-      }
+    // Filter out nulls (messages that weren't found)
+    const validUpdates = updates.filter(Boolean) as Array<{
+      PutRequest: {
+        Item: DynamoDBMessage;
+      };
+    }>;
+
+    if (validUpdates.length > 0) {
+      const params = {
+        RequestItems: {
+          [this.tableName]: validUpdates
+        }
+      };
+
+      await this.documentClient.send(new BatchWriteCommand(params));
     }
   }
-
+}
   /**
    * Delete a message
    */

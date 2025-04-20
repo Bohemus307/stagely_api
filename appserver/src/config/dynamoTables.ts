@@ -6,7 +6,6 @@ import { AttributeType, BillingMode, ProjectionType, StreamViewType } from 'aws-
  * Note: Removed redundant USERS table - we'll use Postgres user data instead
  */
 export const TableNames = {
-  PROPERTY_USERS: 'stagely-property-users',
   CONVERSATIONS: 'stagely-conversations',
   MESSAGES: 'stagely-messages',
   CONNECTIONS: 'stagely-connections',
@@ -18,35 +17,6 @@ export const TableNames = {
  * Note: Removed redundant USERS table to avoid duplication with Postgres
  */
 export const TableDefinitions = {
-  // Property Users Table - Associates users with properties
-  PROPERTY_USERS: {
-    tableName: TableNames.PROPERTY_USERS,
-    partitionKey: {
-      name: 'id',
-      type: AttributeType.STRING
-    },
-    billingMode: BillingMode.PAY_PER_REQUEST,
-    globalSecondaryIndexes: [
-      {
-        indexName: 'userId-index',
-        partitionKey: {
-          name: 'userId',
-          type: AttributeType.NUMBER
-        },
-        projectionType: ProjectionType.ALL
-      },
-      {
-        indexName: 'propertyId-index',
-        partitionKey: {
-          name: 'propertyId',
-          type: AttributeType.NUMBER
-        },
-        projectionType: ProjectionType.ALL
-      }
-    ],
-    pointInTimeRecovery: true,
-    removalPolicy: 'DESTROY' // Change to RETAIN for production
-  },
 
   // Conversations Table
   CONVERSATIONS: {
@@ -180,12 +150,6 @@ export const TableDefinitions = {
  * Note: Removed USER sample and updated references to use Postgres user IDs
  */
 export const SampleRecords = {
-  PROPERTY_USER: {
-    id: "1#42", // Composite "userId#propertyId"
-    userId: 1,   // References Postgres users.user_id
-    propertyId: 42,
-    joinedAt: 1617048800000
-  },
 
   CONVERSATION: {
     conversationId: "conv_123456789",

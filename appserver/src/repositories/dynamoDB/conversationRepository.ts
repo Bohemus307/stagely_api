@@ -9,6 +9,7 @@ import {
   } from "@aws-sdk/lib-dynamodb";
   import { v4 as uuidv4 } from 'uuid';
   import { TableNames } from "../../config/dynamoTables";
+  import { ReturnValue } from "@aws-sdk/client-dynamodb";
 
   export interface DynamoDBConversation {
     conversationId: string;
@@ -194,7 +195,7 @@ import {
         ':senderId': senderId,
         ':unreadCount': updatedUnreadCount
       },
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: ReturnValue.ALL_NEW
     };
 
     const result = await this.documentClient.send(new UpdateCommand(params));
@@ -256,7 +257,7 @@ import {
         ':participants': updatedParticipants,
         ':unreadCount': updatedUnreadCount
       },
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: ReturnValue.ALL_NEW
     };
 
     const result = await this.documentClient.send(new UpdateCommand(params));
@@ -291,7 +292,7 @@ import {
         ':participants': updatedParticipants,
         ':unreadCount': updatedUnreadCount
       },
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: ReturnValue.ALL_NEW
     };
 
     const result = await this.documentClient.send(new UpdateCommand(params));
@@ -307,4 +308,30 @@ import {
 
     return result.Attributes as DynamoDBConversation;
   }
+
+  /**
+ * Get conversations for an incident
+ */
+async getConversationsForIncident(incidentId: number, limit: number = 20, lastEvaluatedKey?: any): Promise<{
+  conversations: DynamoDBConversation[];
+  lastEvaluatedKey?: any;
+}> {
+  const params = {
+    TableName: this.tableName,
+    IndexName: 'incidentId-index', // You'll need to create this GSI
+    KeyConditionExpression: 'incidentId = :incidentId',
+    ExpressionAttributeValues: {
+      ':incidentId': incidentId
+    },
+    Limit: limit,
+    ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+  };
+
+  const result = await this.documentClient.send(new QueryCommand(params));
+
+  return {
+    conversations: (result.Items || []) as DynamoDBConversation[],
+    lastEvaluatedKey: result.LastEvaluatedKey
+  };
+}
 }
