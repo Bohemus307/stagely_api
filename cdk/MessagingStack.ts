@@ -37,14 +37,6 @@ export class MessagingStack extends cdk.Stack {
     });
 
     // Add GSIs to Conversations table
-    this.conversationsTable.addGlobalSecondaryIndex({
-      indexName: 'propertyId-index',
-      partitionKey: {
-        name: 'propertyId',
-        type: dynamodb.AttributeType.NUMBER
-      },
-      projectionType: dynamodb.ProjectionType.ALL
-    });
 
     this.conversationsTable.addGlobalSecondaryIndex({
       indexName: 'participant-index',

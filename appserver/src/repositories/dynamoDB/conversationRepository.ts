@@ -14,10 +14,7 @@ import {
   export interface DynamoDBConversation {
     conversationId: string;
     participants: number[];
-    propertyId?: number;
-    propertyAddress?: string;
-    conversationType: 'property_related' | 'incident_related' | 'general';
-    incidentId?: number;
+    conversationType: 'general';
     createdAt: number;
     lastMessageText?: string;
     lastMessageTime?: number;
@@ -51,10 +48,7 @@ import {
       const conversation: DynamoDBConversation = {
         conversationId,
         participants: data.participants,
-        propertyId: data.propertyId,
-        propertyAddress: data.propertyAddress,
-        conversationType: data.conversationType,
-        incidentId: data.incidentId,
+        conversationType: data.conversationType || 'general',
         lastMessageText: data.lastMessageText,
         lastMessageTime: data.lastMessageTime,
         lastMessageSenderId: data.lastMessageSenderId,
@@ -70,12 +64,13 @@ import {
 
       await this.documentClient.send(new PutCommand(putParams));
 
+      // Create separate items for the participant-index GSI
       const transactItems = data.participants.map(participantId => ({
         Put: {
           TableName: this.tableName,
           Item: {
             ...conversation,
-            participantId
+            participantId: participantId
           }
         }
       }));
@@ -114,47 +109,20 @@ import {
         IndexName: 'participant-index',
         KeyConditionExpression: 'participantId = :userId',
         ExpressionAttributeValues: {
-          ':userId': userId.toString()
+          ':userId': userId
         },
         Limit: limit,
         ScanIndexForward: false,
+        ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+      };
 
-      ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
-    };
+      const result = await this.documentClient.send(new QueryCommand(params));
 
-    const result = await this.documentClient.send(new QueryCommand(params));
-
-    return {
-      conversations: (result.Items || []) as DynamoDBConversation[],
-      lastEvaluatedKey: result.LastEvaluatedKey
-    };
-  }
-
-  /**
-   * Get conversations for a property
-   */
-  async getConversationsForProperty(propertyId: number, limit: number = 20, lastEvaluatedKey?: any): Promise<{
-    conversations: DynamoDBConversation[];
-    lastEvaluatedKey?: any;
-  }> {
-    const params = {
-      TableName: this.tableName,
-      IndexName: 'propertyId-index',
-      KeyConditionExpression: 'propertyId = :propertyId',
-      ExpressionAttributeValues: {
-        ':propertyId': propertyId
-      },
-      Limit: limit,
-      ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
-    };
-
-    const result = await this.documentClient.send(new QueryCommand(params));
-
-    return {
-      conversations: (result.Items || []) as DynamoDBConversation[],
-      lastEvaluatedKey: result.LastEvaluatedKey
-    };
-  }
+      return {
+        conversations: (result.Items || []) as DynamoDBConversation[],
+        lastEvaluatedKey: result.LastEvaluatedKey
+      };
+    }
 
   /**
    * Update conversation with new message info
@@ -309,29 +277,5 @@ import {
     return result.Attributes as DynamoDBConversation;
   }
 
-  /**
- * Get conversations for an incident
- */
-async getConversationsForIncident(incidentId: number, limit: number = 20, lastEvaluatedKey?: any): Promise<{
-  conversations: DynamoDBConversation[];
-  lastEvaluatedKey?: any;
-}> {
-  const params = {
-    TableName: this.tableName,
-    IndexName: 'incidentId-index', // You'll need to create this GSI
-    KeyConditionExpression: 'incidentId = :incidentId',
-    ExpressionAttributeValues: {
-      ':incidentId': incidentId
-    },
-    Limit: limit,
-    ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
-  };
-
-  const result = await this.documentClient.send(new QueryCommand(params));
-
-  return {
-    conversations: (result.Items || []) as DynamoDBConversation[],
-    lastEvaluatedKey: result.LastEvaluatedKey
-  };
-}
+  
 }

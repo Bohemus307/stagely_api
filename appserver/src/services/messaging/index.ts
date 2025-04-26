@@ -11,13 +11,15 @@ export class MessagingService {
   private readonly messageRepo: DynamoDBMessageRepository;
   private readonly connectionRepo: DynamoDBConnectionRepository;
 
-  constructor(prisma: PrismaClient, documentClient: any) {
-    this.prisma = prisma;
-    this.documentClient = documentClient;
-    this.conversationRepo = new DynamoDBConversationRepository(documentClient);
-    this.messageRepo = new DynamoDBMessageRepository(documentClient);
-    this.connectionRepo = new DynamoDBConnectionRepository(documentClient);
-  }
+  // In MessagingService constructor
+constructor(prisma: PrismaClient, documentClient: any) {
+  this.prisma = prisma;
+  this.documentClient = documentClient;
+  const deploymentEnv = process.env.DEPLOYMENT_ENV || 'staging';
+  this.conversationRepo = new DynamoDBConversationRepository(documentClient, deploymentEnv);
+  this.messageRepo = new DynamoDBMessageRepository(documentClient, deploymentEnv);
+  this.connectionRepo = new DynamoDBConnectionRepository(documentClient, deploymentEnv);
+}
 
 
   /**
@@ -25,16 +27,17 @@ export class MessagingService {
    * Now just validates user exists in PostgreSQL
    */
   async initializeUser(auth0Id: string): Promise<any> {
+    console.log("Initializing user with auth0Id:", auth0Id);
     // Get user from PostgreSQL
     const pgUser = await this.prisma.user.findUnique({
       where: { auth0Id }
     });
-
+    console.log("Found pgUser:", pgUser);
     if (!pgUser) {
       throw new Error(`User not found with Auth0 ID: ${auth0Id}`);
     }
 
-    return {
+    const messagingUser = {
       userId: pgUser.id,
       email: pgUser.email,
       firstName: pgUser.firstName,
@@ -44,6 +47,10 @@ export class MessagingService {
       createdAt: pgUser.createdAt.getTime(),
       updatedAt: pgUser.updatedAt.getTime()
     };
+
+    console.log("Returning messagingUser:", messagingUser);
+
+    return messagingUser;
   }
 
   /**
@@ -71,39 +78,11 @@ export class MessagingService {
       throw new Error('One or more participants do not exist');
     }
 
-    // If property related, get property details and validate
-    let propertyAddress: string | undefined;
 
-    if (propertyId) {
-      const property = await this.prisma.property.findUnique({
-        where: { id: propertyId },
-        select: { address: true, city: true, state: true }
-      });
-
-      if (!property) {
-        throw new Error(`Property not found: ${propertyId}`);
-      }
-
-      propertyAddress = `${property.address}, ${property.city}, ${property.state}`;
-    }
-
-    // If incident related, validate incident
-    if (incidentId) {
-      const incident = await this.prisma.incident.findUnique({
-        where: { id: incidentId }
-      });
-
-      if (!incident) {
-        throw new Error(`Incident not found: ${incidentId}`);
-      }
-    }
 
     return this.conversationRepo.createConversation({
       participants,
-      propertyId,
-      propertyAddress,
-      conversationType: type,
-      incidentId
+      conversationType: 'general',
     });
   }
 
@@ -127,104 +106,10 @@ export class MessagingService {
       throw new Error(`User not found: ${userId}`);
     }
 
-    const result = await this.conversationRepo.getConversationsForUser(userId, limit, lastEvaluatedKey);
+    return this.conversationRepo.getConversationsForUser(userId, limit, lastEvaluatedKey);
 
-    // Enrich conversations with PostgreSQL data
-    const enrichedConversations = await Promise.all(
-      result.conversations.map(async (conversation) => {
-        // Add property data if it exists
-        if (conversation.propertyId) {
-          const property = await this.prisma.property.findUnique({
-            where: { id: conversation.propertyId },
-            select: { address: true, city: true, state: true }
-          });
-
-          if (property) {
-            conversation.propertyAddress = `${property.address}, ${property.city}, ${property.state}`;
-          }
-        }
-
-        // Don't need to enrich participants as they're just IDs
-        return conversation;
-      })
-    );
-
-    return {
-      conversations: enrichedConversations,
-      lastEvaluatedKey: result.lastEvaluatedKey
-    };
   }
 
-  /**
-   * Create property conversation for all property users
-   */
-  async createPropertyConversation(
-    creatorId: number,
-    propertyId: number,
-    initialMessage?: string
-  ): Promise<{
-    conversation: DynamoDBConversation;
-    message?: DynamoDBMessage;
-  }> {
-    // Verify creator exists
-    const creator = await this.prisma.user.findUnique({
-      where: { id: creatorId }
-    });
-
-    if (!creator) {
-      throw new Error(`User not found: ${creatorId}`);
-    }
-
-    // Verify property exists
-    const property = await this.prisma.property.findUnique({
-      where: { id: propertyId },
-      select: { address: true, city: true, state: true }
-    });
-
-    if (!property) {
-      throw new Error(`Property not found: ${propertyId}`);
-    }
-
-    // Get all users associated with the property
-    const propertyUsers = await this.prisma.user.findMany({
-      where: {
-        OR: [
-          { properties: { some: { id: propertyId } } },
-          { id: creatorId } // Include creator even if not directly associated
-        ]
-      },
-      select: { id: true }
-    });
-
-    const allParticipants = [...new Set(propertyUsers.map(u => u.id))];
-
-    // Create conversation in DynamoDB
-    const conversation = await this.conversationRepo.createConversation({
-      participants: allParticipants,
-      propertyId,
-      propertyAddress: `${property.address}, ${property.city}, ${property.state}`,
-      conversationType: 'property_related'
-    });
-
-    let message: DynamoDBMessage | undefined;
-
-    if (initialMessage && initialMessage.trim().length > 0) {
-      message = await this.messageRepo.createMessage(
-        conversation.conversationId,
-        creatorId,
-        initialMessage.trim(),
-        allParticipants
-      );
-
-      await this.conversationRepo.updateWithNewMessage(
-        conversation.conversationId,
-        creatorId,
-        initialMessage.trim()
-      );
-    }
-
-    return { conversation, message };
-  }
 
   /**
    * Send a message in a conversation
@@ -399,45 +284,13 @@ export class MessagingService {
     await this.connectionRepo.deleteConnection(connectionId);
   }
 
-  /**
-   * Get all connections for a user
-   * This is used to send messages to all of a user's devices
-   */
-  async getUserConnections(userId: number): Promise<string[]> {
-    // Verify user exists in PostgreSQL
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
-    }
-
-    const connections = await this.connectionRepo.getConnectionsForUser(userId);
-    return connections.map(c => c.connectionId);
-  }
 
   /**
    * Get conversation by ID
    */
   async getConversationById(conversationId: string): Promise<DynamoDBConversation | null> {
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    return this.conversationRepo.getConversationById(conversationId);
 
-    if (conversation) {
-      // Enrich with property data if it exists
-      if (conversation.propertyId) {
-        const property = await this.prisma.property.findUnique({
-          where: { id: conversation.propertyId },
-          select: { address: true, city: true, state: true }
-        });
-
-        if (property) {
-          conversation.propertyAddress = `${property.address}, ${property.city}, ${property.state}`;
-        }
-      }
-    }
-
-    return conversation;
   }
 
   /**
@@ -508,88 +361,6 @@ export class MessagingService {
     );
   }
 
-  /**
-   * Get conversations for a property
-   */
-  async getConversationsForProperty(
-    propertyId: number,
-    limit: number = 20,
-    lastEvaluatedKey?: any
-  ): Promise<{
-    conversations: DynamoDBConversation[];
-    lastEvaluatedKey?: any;
-  }> {
-    // Verify property exists in PostgreSQL
-    const property = await this.prisma.property.findUnique({
-      where: { id: propertyId }
-    });
-
-    if (!property) {
-      throw new Error(`Property not found: ${propertyId}`);
-    }
-
-    const result = await this.conversationRepo.getConversationsForProperty(propertyId, limit, lastEvaluatedKey);
-
-    // Enrich with property data
-    const enrichedConversations = result.conversations.map(conversation => {
-      return {
-        ...conversation,
-        propertyAddress: `${property.address}, ${property.city}, ${property.state}`
-      };
-    });
-
-    return {
-      conversations: enrichedConversations,
-      lastEvaluatedKey: result.lastEvaluatedKey
-    };
-  }
-
-  /**
-   * Get property incidents with conversations
-   */
-  async getPropertyIncidentsWithConversations(
-    propertyId: number,
-    userId: number
-  ): Promise<any[]> {
-    // Verify property exists in PostgreSQL
-    const property = await this.prisma.property.findUnique({
-      where: { id: propertyId }
-    });
-
-    if (!property) {
-      throw new Error(`Property not found: ${propertyId}`);
-    }
-
-    // Get incidents for the property
-    const incidents = await this.prisma.incident.findMany({
-      where: {
-        propertyId: propertyId
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    // For each incident, check if there's a conversation
-    const incidentsWithConversations = await Promise.all(
-      incidents.map(async (incident) => {
-        // Find conversation for this incident
-        const conversationsResult = await this.conversationRepo.getConversationsForIncident(incident.id);
-
-        // Filter for conversations that include this user
-        const incidentConversation = conversationsResult.conversations.find(
-          (conv) => conv.participants.includes(userId)
-        );
-
-        return {
-          incident,
-          conversation: incidentConversation || null
-        };
-      })
-    );
-
-    return incidentsWithConversations;
-  }
 
   /**
    * Get unread conversation count for user
@@ -621,30 +392,12 @@ export class MessagingService {
       if (unreadCount > 0) {
         totalUnread += unreadCount;
 
-        // Enrich with property data if needed
-        let propertyData = null;
-        if (conversation.propertyId) {
-          const property = await this.prisma.property.findUnique({
-            where: { id: conversation.propertyId },
-            select: { address: true, city: true, state: true }
-          });
-
-          if (property) {
-            propertyData = {
-              id: conversation.propertyId,
-              address: property.address,
-              city: property.city,
-              state: property.state
-            };
-          }
-        }
 
         conversationsWithUnread.push({
           conversationId: conversation.conversationId,
           unreadCount,
           lastMessageText: conversation.lastMessageText,
           lastMessageTime: conversation.lastMessageTime,
-          property: propertyData
         });
       }
     }

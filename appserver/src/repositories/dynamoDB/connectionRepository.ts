@@ -27,7 +27,7 @@ import {
     }
 
     /**
-     * Store a new WebSocket connection
+     * Store a new user connection
      */
     async saveConnection(connectionId: string, userId: number, deviceId?: string): Promise<DynamoDBConnection> {
       const now = Math.floor(Date.now() / 1000); // Current time in seconds

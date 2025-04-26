@@ -27,14 +27,7 @@ export const TableDefinitions = {
     },
     billingMode: BillingMode.PAY_PER_REQUEST,
     globalSecondaryIndexes: [
-      {
-        indexName: 'propertyId-index',
-        partitionKey: {
-          name: 'propertyId',
-          type: AttributeType.NUMBER
-        },
-        projectionType: ProjectionType.ALL
-      },
+
       {
         indexName: 'participant-index',
         partitionKey: {
@@ -154,10 +147,7 @@ export const SampleRecords = {
   CONVERSATION: {
     conversationId: "conv_123456789",
     participants: [1, 2, 3], // User IDs from Postgres users table
-    propertyId: 42,
-    propertyAddress: "123 Main St, Anytown, CA",
-    conversationType: "property_related", // or "incident_related", "general"
-    incidentId: 123, // Optional reference to specific incident
+    conversationType: "general", // Only support general type now
     createdAt: 1617048800000,
     lastMessageText: "When will the plumber arrive?",
     lastMessageTime: 1618048800000,
