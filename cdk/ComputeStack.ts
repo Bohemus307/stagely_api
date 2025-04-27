@@ -48,7 +48,7 @@ export class ComputeStack extends cdk.Stack {
       return [
         {
           name: `/sdk/aws-access-key-id-${appEnv}`,
-          envKey: "ACCESS_KEY_ID",
+          envKey: "ACCESS_KEY",
           description: `aws access key for ${appEnv}`,
         },
         {

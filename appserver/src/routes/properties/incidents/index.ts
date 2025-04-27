@@ -373,129 +373,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /incidents
-  // fastify.route({
-  //   method: "POST",
-  //   url: "/",
-  //   onRequest: [fastify.authenticate],
-  //   schema: {
-  //     tags: ["incidents"],
-  //     description: "Create a new incident",
-  //     summary: "Create incident",
-  //     body: {
-  //       type: "object",
-  //       properties: {
-  //         propertyId: { type: "integer" },
-  //         incidentType: { type: "string" },
-  //         description: { type: "string" },
-  //         reportedAt: { type: "string", format: "date-time" },
-  //         severity: {
-  //           type: "string",
-  //           enum: Object.values(IncidentSeverity),
-  //         },
-  //         spaceType: {
-  //           type: "string",
-  //           enum: Object.values(SpaceType),
-  //           nullable: true,
-  //         },
-  //         status: {
-  //           type: "string",
-  //           enum: Object.values(IncidentStatus),
-  //         },
-  //         images: {
-  //           type: "array",
-  //           items: {
-  //             type: "object",
-  //             properties: {
-  //               imageUrl: { type: "string" },
-  //               caption: { type: "string", nullable: true },
-  //               takenAt: { type: "string", format: "date-time" },
-  //               metadata: { type: "object", nullable: true },
-  //             },
-  //             required: ["imageUrl", "takenAt"],
-  //           },
-  //         },
-  //       },
-  //       required: [
-  //         "propertyId",
-  //         "incidentType",
-  //         "description",
-  //         "severity",
-  //         "reportedAt",
-  //       ],
-  //     },
-  //     response: {
-  //       201: {
-  //         type: "object",
-  //         properties: {
-  //           id: { type: "integer" },
-  //           propertyId: { type: "integer" },
-  //           incidentType: { type: "string" },
-  //           description: { type: "string" },
-  //           reportedAt: { type: "string", format: "date-time" },
-  //           resolvedAt: { type: "string", format: "date-time", nullable: true },
-  //           severity: {
-  //             type: "string",
-  //             enum: Object.values(IncidentSeverity),
-  //           },
-  //           status: {
-  //             type: "string",
-  //             enum: Object.values(IncidentStatus),
-  //           },
-  //           spaceType: {
-  //             type: "string",
-  //             enum: Object.values(SpaceType),
-  //             nullable: true,
-  //           },
-  //           aiClassified: { type: "boolean" },
-  //           createdAt: { type: "string", format: "date-time" },
-  //           updatedAt: { type: "string", format: "date-time" },
-  //         },
-  //       },
-  //     },
-  //     security: [{ bearerAuth: [] }],
-  //   },
-  //   handler: async (request, reply) => {
-  //     const incidentData = request.body as any;
-
-  //     try {
-  //       // Get user from auth token
-  //       const user = await fastify.prisma.user.findUnique({
-  //         where: { auth0Id: request?.user?.sub },
-  //       });
-
-  //       if (!user) {
-  //         return sendUnauthorized(reply, "User not found");
-  //       }
-
-  //       // Verify the property belongs to the user
-  //       const property = await fastify.prisma.property.findUnique({
-  //         where: { id: incidentData.propertyId },
-  //         select: { userId: true, id: true },
-  //       });
-
-  //       if (!property || property.userId !== user.id) {
-  //         return sendUnauthorized(
-  //           reply,
-  //           "You don't have permission to add an incident to this property",
-  //         );
-  //       }
-
-  //       // Use normal create if no special image_url is provided
-  //       const incident = await incidentService.createIncidentFromImage(
-  //             property.id,
-  //             incidentData.image_url,
-  //           )
-
-  //       reply.code(201);
-  //       return incident;
-  //     } catch (err: any) {
-  //       fastify.log.error(err);
-  //       throw err;
-  //     }
-  //   },
-  // });
-
   // PUT /incidents/:id
   fastify.route({
     method: "PUT",
@@ -1075,9 +952,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           };
         }
 
-        // TODO: The repository doesn't support filtering by multiple property IDs
-        // For now, we'll just use the first property ID
-        // In a real implementation, you'd want to modify the repository to support this
+        // The repository now supports filtering by multiple property IDs
       }
 
       const stats = await incidentService.getIncidentStats(parsedPropertyId);
@@ -1085,7 +960,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  // POST /incidents/
   // POST /incidents
   fastify.route({
     method: "POST",
@@ -1116,6 +990,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             enum: Object.values(IncidentStatus),
           },
           imageUrl: { type: "string" },
+          metadata: { type: "object" },
           images: {
             type: "array",
             items: {
@@ -1126,7 +1001,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                 takenAt: { type: "string", format: "date-time" },
                 metadata: { type: "object", nullable: true },
               },
-              required: ["imageUrl", "takenAt"],
+              required: ["imageUrl"],
             },
           },
         },
@@ -1197,11 +1072,24 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
         // If imageUrl is provided, use the AI classification flow
         if (incidentData.imageUrl) {
-          incident = await incidentService.createIncidentFromImage(
-            property.id,
-            incidentData.imageUrl,
-            incidentData.metadata,
-          );
+          try {
+            incident = await incidentService.createIncidentFromImage(
+              property.id,
+              incidentData.imageUrl,
+              incidentData.metadata,
+            );
+          } catch (error) {
+            fastify.log.error("Error during AI classification:", error);
+
+            // Fall back to normal creation if AI classification fails
+            return reply.code(400).send({
+              error: {
+                statusCode: 400,
+                message:
+                  "Failed to create incident from image. Please try using the standard creation method.",
+              },
+            });
+          }
         }
         // Otherwise use the standard create incident flow
         else {
@@ -1220,6 +1108,16 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             });
           }
 
+          // Ensure images have takenAt date if present
+          if (incidentData.images && incidentData.images.length > 0) {
+            incidentData.images = incidentData.images.map(
+              (img: { takenAt: any }) => ({
+                ...img,
+                takenAt: img.takenAt || new Date().toISOString(),
+              }),
+            );
+          }
+
           incident = await incidentService.createIncident({
             propertyId: property.id,
             incidentType: incidentData.incidentType,
@@ -1235,6 +1133,104 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         return incident;
       } catch (err: any) {
         fastify.log.error(err);
+
+        // Handle specific errors with appropriate responses
+        if (err instanceof NotFoundError) {
+          return reply.code(404).send({
+            error: {
+              statusCode: 404,
+              message: err.message,
+            },
+          });
+        }
+
+        throw err;
+      }
+    },
+  });
+
+  // POST /incidents/classify
+  fastify.route({
+    method: "POST",
+    url: "/classify-images",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["incidents"],
+      description: "Classify existing images to create incidents",
+      summary: "Create incidents from existing images",
+      body: {
+        type: "object",
+        properties: {
+          propertyId: { type: "integer" },
+          imageIds: {
+            type: "array",
+            items: { type: "integer" },
+          },
+        },
+        required: ["propertyId", "imageIds"],
+      },
+      response: {
+        200: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              incidentId: { type: "integer" },
+              spaceType: {
+                type: "string",
+                enum: Object.values(SpaceType),
+              },
+              confidenceScore: { type: "number" },
+              objectLabels: {
+                type: "array",
+                items: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      const { propertyId, imageIds } = request.body as {
+        propertyId: number;
+        imageIds: number[];
+      };
+
+      try {
+        // Verify user owns the property
+        const user = await fastify.prisma.user.findUnique({
+          where: { auth0Id: request?.user?.sub },
+        });
+
+        if (!user) {
+          return sendUnauthorized(reply, "User not found");
+        }
+
+        const property = await fastify.prisma.property.findUnique({
+          where: { id: propertyId },
+          select: { userId: true },
+        });
+
+        if (!property || property.userId !== user.id) {
+          return sendUnauthorized(
+            reply,
+            "You don't have permission to classify images for this property",
+          );
+        }
+
+        // Use the autoCreateAndClassifyIncident method to create incidents from images
+        const results = await incidentService.autoCreateAndClassifyIncident(
+          propertyId,
+          imageIds,
+        );
+
+        return results;
+      } catch (err) {
+        fastify.log.error("Error classifying images:", err);
+        if (err instanceof NotFoundError) {
+          return sendNotFound(reply, err.message);
+        }
         throw err;
       }
     },
