@@ -5,7 +5,8 @@ import {
   QueryCommand,
   UpdateCommand,
   DeleteCommand,
-  BatchWriteCommand
+  BatchWriteCommand,
+  BatchGetCommand
 } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from 'uuid';
 import { TableNames } from "../../config/dynamoTables";
@@ -28,6 +29,15 @@ export class DynamoDBMessageRepository {
     this.documentClient = documentClient;
     // Append environment to table name
     this.tableName = `${TableNames.MESSAGES}-${deploymentEnv}`;
+  }
+
+  /**
+   * Validate participant ID
+   */
+  private validateParticipant(participantId: number): void {
+    if (!Number.isInteger(participantId) || participantId < 1) {
+      throw new Error(`Invalid participant ID: ${participantId}`);
+    }
   }
 
   /**
@@ -130,8 +140,9 @@ export class DynamoDBMessageRepository {
         messageId,
         conversationId
       },
-      UpdateExpression: `set status.#userId = :status`,
+      UpdateExpression: `set #status.#userId = :status`,
       ExpressionAttributeNames: {
+        '#status': 'status',
         '#userId': userIdStr
       },
       ExpressionAttributeValues: {
@@ -147,53 +158,65 @@ export class DynamoDBMessageRepository {
   /**
    * Update message status for multiple messages
    */
- 
-async batchUpdateMessageStatus(
-  messageInfos: Array<{ messageId: string, conversationId: string }>,
-  userId: number,
-  status: 'SENT' | 'DELIVERED' | 'READ'
-): Promise<void> {
-  const userIdStr = userId.toString();
+  async batchUpdateMessageStatus(
+    messageInfos: Array<{ messageId: string, conversationId: string }>,
+    userId: number,
+    status: 'SENT' | 'DELIVERED' | 'READ'
+  ): Promise<void> {
+    const userIdStr = userId.toString();
+    const batchSize = 25;
 
-  // DynamoDB batch operations are limited to 25 items per request
-  const batchSize = 25;
+    for (let i = 0; i < messageInfos.length; i += batchSize) {
+      const batch = messageInfos.slice(i, i + batchSize);
 
-  for (let i = 0; i < messageInfos.length; i += batchSize) {
-    const batch = messageInfos.slice(i, i + batchSize);
+      // Use BatchGetItem to get all messages at once
+      const batchGetParams = {
+        RequestItems: {
+          [this.tableName]: {
+            Keys: batch.map(info => ({
+              messageId: info.messageId,
+              conversationId: info.conversationId
+            }))
+          }
+        }
+      };
 
-    const updates = await Promise.all(
-      batch.map(async ({ messageId, conversationId }) => {
-        const message = await this.getMessageById(messageId, conversationId);
-        if (!message) return null;
+      const batchGetResult = await this.documentClient.send(new BatchGetCommand(batchGetParams));
+      const messages = batchGetResult.Responses?.[this.tableName] || [];
 
+      // Update status and prepare BatchWriteItem
+      const updates = messages.map((message: { status: { [x: string]: string; }; }) => {
         message.status[userIdStr] = status;
-
         return {
           PutRequest: {
             Item: message
           }
         };
-      })
-    );
+      });
 
-    // Filter out nulls (messages that weren't found)
-    const validUpdates = updates.filter(Boolean) as Array<{
-      PutRequest: {
-        Item: DynamoDBMessage;
-      };
-    }>;
+      if (updates.length > 0) {
+        const params = {
+          RequestItems: {
+            [this.tableName]: updates
+          }
+        };
 
-    if (validUpdates.length > 0) {
-      const params = {
-        RequestItems: {
-          [this.tableName]: validUpdates
+        try {
+          const result = await this.documentClient.send(new BatchWriteCommand(params));
+
+          // Handle unprocessed items
+          if (result.UnprocessedItems && Object.keys(result.UnprocessedItems).length > 0) {
+            // Implement retry logic here if needed
+            console.warn('Unprocessed items in batch write:', result.UnprocessedItems);
+          }
+        } catch (error) {
+          console.error('Error in batch update:', error);
+          throw error;
         }
-      };
-
-      await this.documentClient.send(new BatchWriteCommand(params));
+      }
     }
   }
-}
+
   /**
    * Delete a message
    */
