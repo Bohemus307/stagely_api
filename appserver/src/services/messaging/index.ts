@@ -66,14 +66,6 @@ export class MessagingService {
     conversations: DynamoDBConversation[];
     lastEvaluatedKey?: any;
   }> {
-    // Verify user exists in PostgreSQL
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new NotFoundError(`User not found: ${userId}`);
-    }
 
     return this.conversationRepo.getConversationsForUser(userId, limit, lastEvaluatedKey);
   }
@@ -93,7 +85,6 @@ export class MessagingService {
       throw new NotFoundError(`Conversation not found: ${conversationId}`);
     }
 
-    // Verify user is a participant
     if (!conversation.participants.includes(userId)) {
       throw new Error('User is not a participant in this conversation');
     }
@@ -112,14 +103,6 @@ export class MessagingService {
     senderId: number,
     text: string
   ): Promise<DynamoDBMessage> {
-    // Verify sender exists in PostgreSQL
-    const sender = await this.prisma.user.findUnique({
-      where: { id: senderId }
-    });
-
-    if (!sender) {
-      throw new NotFoundError(`User not found: ${senderId}`);
-    }
 
     // Get conversation and verify sender is a participant
     const conversation = await this.conversationRepo.getConversationById(conversationId);
@@ -165,14 +148,6 @@ export class MessagingService {
     messages: DynamoDBMessage[];
     lastEvaluatedKey?: any;
   }> {
-    // Verify user exists in PostgreSQL
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new NotFoundError(`User not found: ${userId}`);
-    }
 
     // Get conversation and verify user is a participant
     const conversation = await this.conversationRepo.getConversationById(conversationId);
@@ -202,14 +177,7 @@ export class MessagingService {
     userId: number,
     messageIds: string[]
   ): Promise<void> {
-    // Verify user exists in PostgreSQL
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new NotFoundError(`User not found: ${userId}`);
-    }
+    // User verification removed
 
     // Get conversation and verify user is a participant
     const conversation = await this.conversationRepo.getConversationById(conversationId);
@@ -243,15 +211,8 @@ export class MessagingService {
     participantId: number,
     requesterId: number
   ): Promise<DynamoDBConversation> {
-    // Verify both users exist in PostgreSQL
-    const [requester, participant] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: requesterId } }),
-      this.prisma.user.findUnique({ where: { id: participantId } })
-    ]);
-
-    if (!requester) {
-      throw new NotFoundError(`Requester not found: ${requesterId}`);
-    }
+    // check if the participant exists
+    const participant = await this.prisma.user.findUnique({ where: { id: participantId } });
     if (!participant) {
       throw new NotFoundError(`Participant not found: ${participantId}`);
     }
@@ -289,15 +250,8 @@ export class MessagingService {
     participantId: number,
     requesterId: number
   ): Promise<DynamoDBConversation> {
-    // Verify both users exist in PostgreSQL
-    const [requester, participant] = await Promise.all([
-      this.prisma.user.findUnique({ where: { id: requesterId } }),
-      this.prisma.user.findUnique({ where: { id: participantId } })
-    ]);
-
-    if (!requester) {
-      throw new NotFoundError(`Requester not found: ${requesterId}`);
-    }
+    // Only need to check participant ID exists, requester already verified in route
+    const participant = await this.prisma.user.findUnique({ where: { id: participantId } });
     if (!participant) {
       throw new NotFoundError(`Participant not found: ${participantId}`);
     }
@@ -335,14 +289,6 @@ export class MessagingService {
     unreadCount: number;
     conversationsWithUnread: any[];
   }> {
-    // Verify user exists in PostgreSQL
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId }
-    });
-
-    if (!user) {
-      throw new NotFoundError(`User not found: ${userId}`);
-    }
 
     // Get all conversations for user
     const result = await this.conversationRepo.getConversationsForUser(userId, 100);

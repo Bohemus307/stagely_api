@@ -447,10 +447,6 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           user.id,
           text
         );
-        console.log('senderId:', user.id);
-console.log('conversationId:', conversationId);
-console.log('text:', text);
-console.log('timestamp:', Date.now());
 
         return {
           success: true,
