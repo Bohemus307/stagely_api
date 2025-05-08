@@ -5,6 +5,9 @@ import {
   DynamoDBConversation,
 } from "../../repositories/dynamoDB/conversationRepository";
 import { sendNotFound, sendForbidden, sendUnauthorized } from "../../utils/responses";
+import { EmailService } from "../../services/email/index";
+import { v4 as uuidv4 } from 'uuid';
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 // Define interface types for request parameters and bodies
 interface CreateConversationBody {
@@ -33,12 +36,23 @@ interface QueryParams {
   lastKey?: string;
 }
 
-// Add declaration for FastifyInstance with dynamoDB
+interface InviteUserResponse {
+  success: boolean;
+  user: {
+    id: number;
+    email: string;
+    isPlaceholder: boolean;
+  };
+}
+
 declare module 'fastify' {
   interface FastifyInstance {
     dynamoDB: {
       client: any;
       documentClient: any;
+    };
+    email: {
+      sendInvitationEmail: (email: string, token: string, inviterName: string) => Promise<string>;
     };
   }
 }
@@ -54,6 +68,154 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.prisma,
     fastify.dynamoDB.documentClient
   );
+
+
+// Create conversation with invited user
+fastify.route({
+  method: "POST",
+  url: "/invite-conversation",
+  onRequest: [fastify.authenticate],
+  schema: {
+    tags: ["messaging"],
+    description: "Create a conversation with an invited user",
+    summary: "Create invited user conversation",
+    body: {
+      type: "object",
+      properties: {
+        email: {
+          type: "string",
+          format: "email",
+          description: "Email of the user to invite"
+        },
+        initialMessage: {
+          type: "string",
+          description: "Initial message to send (optional)"
+        }
+      },
+      required: ["email"]
+    },
+    response: {
+      200: {
+        type: "object",
+        properties: {
+          success: { type: "boolean", example: true },
+          conversation: { type: "object" },
+          message: { type: "object", nullable: true },
+          user: { type: "object" }
+        }
+      }
+    },
+    security: [{ bearerAuth: [] }]
+  },
+  handler: async (request, reply) => {
+    try {
+      const currentUser = await fastify.prisma.user.findUnique({
+        where: { auth0Id: request?.user?.sub }
+      });
+
+      if (!currentUser) {
+        return sendUnauthorized(reply, "User not found");
+      }
+
+      const { email, initialMessage } = request.body as {
+        email: string;
+        initialMessage?: string;
+      };
+
+      // First check if user exists
+      let user = await fastify.prisma.user.findFirst({
+        where: {
+          email,
+          isPlaceholder: false
+        }
+      });
+
+      if (!user) {
+        // Check for existing invitation
+        user = await fastify.prisma.user.findFirst({
+          where: {
+            email,
+            isPlaceholder: true,
+            expiresAt: {
+              gt: new Date()
+            }
+          }
+        });
+
+        if (!user) {
+          // Create new invitation/placeholder user directly
+          const invitationToken = uuidv4();
+
+          // Set expiration date to 7 days from now
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 7);
+
+          // Create placeholder user
+          user = await fastify.prisma.user.create({
+            data: {
+              email,
+              firstName: "Invited",
+              lastName: "User",
+              auth0Id: `placeholder-${invitationToken}`,
+              isPlaceholder: true,
+              invitationToken,
+              invitedById: currentUser.id,
+              expiresAt
+            }
+          });
+
+          try {
+            await fastify.email.sendInvitationEmail(
+              email,
+              invitationToken,
+              `${currentUser.firstName} ${currentUser.lastName}`
+            );
+            fastify.log.info(`Invitation email sent to ${email}`);
+          } catch (emailError) {
+            fastify.log.error("Failed to send invitation email:", emailError);
+            // Continue even if email fails
+          }
+        }
+      }
+
+      // Create conversation with the user
+      const conversation = await messagingService.createConversation(
+        currentUser.id,
+        [user.id],
+        'general'
+      );
+
+      // Send initial message if provided
+      let message;
+      if (initialMessage) {
+        message = await messagingService.sendMessage(
+          conversation.conversationId,
+          currentUser.id,
+          initialMessage
+        );
+      }
+
+      return {
+        success: true,
+        conversation,
+        message: message || null,
+        user: {
+          id: user.id,
+          email: user.email,
+          isPlaceholder: !!user.isPlaceholder
+        }
+      };
+    } catch (err: any) {
+      fastify.log.error(err);
+      reply.code(500).send({
+        success: false,
+        error: err.message || 'An unknown error occurred'
+
+      });
+    }
+  }
+  });
+
 
   // Get all conversations for the current user
   fastify.route({
@@ -445,7 +607,8 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const message = await messagingService.sendMessage(
           conversationId,
           user.id,
-          text
+          text,
+          fastify
         );
 
         return {

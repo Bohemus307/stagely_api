@@ -93,44 +93,79 @@ export class MessagingService {
   }
 
   /**
-   * Send a message in a conversation
-   * @param conversationId - The conversation ID
-   * @param senderId - ID of the sender
-   * @param text - Message text
-   */
-  async sendMessage(
-    conversationId: string,
-    senderId: number,
-    text: string
-  ): Promise<DynamoDBMessage> {
+ * Send a message in a conversation
+ * @param conversationId - The conversation ID
+ * @param senderId - ID of the sender
+ * @param text - Message text
+ */
+async sendMessage(
+  conversationId: string,
+  senderId: number,
+  text: string,
+  fastify?: any
+): Promise<DynamoDBMessage> {
 
-    // Get conversation and verify sender is a participant
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
-    if (!conversation) {
-      throw new NotFoundError(`Conversation not found: ${conversationId}`);
-    }
-
-    if (!conversation.participants.includes(senderId)) {
-      throw new Error('User is not a participant in this conversation');
-    }
-
-    // Create message
-    const message = await this.messageRepo.createMessage(
-      conversationId,
-      senderId,
-      text,
-      conversation.participants
-    );
-
-    // Update conversation with new message info
-    await this.conversationRepo.updateWithNewMessage(
-      conversationId,
-      senderId,
-      text
-    );
-
-    return message;
+  // Get conversation and verify sender is a participant
+  const conversation = await this.conversationRepo.getConversationById(conversationId);
+  if (!conversation) {
+    throw new NotFoundError(`Conversation not found: ${conversationId}`);
   }
+
+  if (!conversation.participants.includes(senderId)) {
+    throw new Error('User is not a participant in this conversation');
+  }
+
+  // Create message
+  const message = await this.messageRepo.createMessage(
+    conversationId,
+    senderId,
+    text,
+    conversation.participants
+  );
+
+
+  // Update conversation with new message info
+  await this.conversationRepo.updateWithNewMessage(
+    conversationId,
+    senderId,
+    text
+  );
+
+  if (fastify && fastify.email) {
+    const sender = await this.prisma.user.findUnique({
+      where: { id: senderId },
+      select: { firstName: true, lastName: true }
+    });
+
+  const senderName = sender ? `${sender.firstName} ${sender.lastName}` : "A user";
+
+  // Get all conversation participants except sender
+  const recipients = await this.prisma.user.findMany({
+    where: {
+      id: { in: conversation.participants.filter(id => id !== senderId) }
+    }
+  });
+
+  // Send email notification to all participants
+  for (const recipient of recipients) {
+    try {
+      await fastify.email.sendMessageNotification({
+        to: recipient.email,
+        senderName,
+        messageText: text,
+        sentAt: new Date().toLocaleString(),
+        conversationId
+      });
+
+      fastify.log.info(`Message notification sent to ${recipient.email}`);
+    } catch (error) {
+      fastify.log.error(`Failed to send message notification: ${error}`);
+    }
+  }
+  }
+  return message;
+}
+
 
   /**
    * Get messages for a conversation
