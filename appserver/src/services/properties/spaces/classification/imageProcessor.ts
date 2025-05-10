@@ -3,8 +3,10 @@ import {
   S3Client,
   GetObjectCommand,
   HeadObjectCommand,
+  PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { CachedImage } from "./classificationTypes";
+import { DetectedLabel } from "../../../incidents/comparison/comparisonTypes";
 
 export class ImageProcessor {
   private s3Client: S3Client;
@@ -32,6 +34,195 @@ export class ImageProcessor {
       // If URL parsing fails, assume the URL is the key
       return imageUrl;
     }
+  }
+
+  /**
+   * Draw bounding boxes on an image and save it to S3
+   */
+  async drawBoundingBoxesOnImage(
+    originalImageKey: string,
+    detectedLabels: DetectedLabel[],
+    propertyId: number,
+    userId: string,
+  ): Promise<string> {
+    try {
+      // Get the original image
+      const originalBuffer =
+        await this.getOriginalImageFromS3(originalImageKey);
+
+      // Create a sharp instance for image manipulation
+      const image = sharp(originalBuffer);
+
+      // Get image metadata
+      const metadata = await image.metadata();
+      const { width, height } = metadata;
+
+      if (!width || !height) {
+        throw new Error("Could not determine image dimensions");
+      }
+
+      // Create an SVG overlay with bounding boxes
+      const svgBuffer = Buffer.from(
+        this.createBoundingBoxSVG(width, height, detectedLabels),
+      );
+
+      // Composite the SVG overlay on the original image
+      const labeledBuffer = await image
+        .composite([{ input: svgBuffer, top: 0, left: 0 }])
+        .jpeg({ quality: 90 })
+        .toBuffer();
+
+      // Generate a path for the labeled image
+      const timestamp = new Date().getTime();
+      const labeledKey = `incidents/${propertyId}/${userId}/${timestamp}_labeled.jpg`;
+
+      // Upload the labeled image to S3
+      await this.s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.s3Bucket,
+          Key: labeledKey,
+          Body: labeledBuffer,
+          ContentType: "image/jpeg",
+        }),
+      );
+
+      // Return the URL to the labeled image
+      return `https://${this.s3Bucket}.s3.amazonaws.com/${labeledKey}`;
+    } catch (error) {
+      console.error("Error drawing bounding boxes on image:", error);
+      throw new Error(`Failed to draw bounding boxes: ${error}`);
+    }
+  }
+
+  /**
+   * Get the original (non-optimized) image from S3
+   */
+  private async getOriginalImageFromS3(key: string): Promise<Buffer> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+      });
+
+      const response = await this.s3Client.send(command);
+
+      if (!response.Body) {
+        throw new Error("Empty response from S3");
+      }
+
+      // Convert stream to buffer
+      const chunks: Buffer[] = [];
+      for await (const chunk of response.Body as any) {
+        chunks.push(Buffer.from(chunk));
+      }
+
+      return Buffer.concat(chunks);
+    } catch (error) {
+      console.error("Error getting original image from S3:", error);
+      throw new Error(`Failed to get original image: ${error}`);
+    }
+  }
+
+  /**
+   * Create an SVG with bounding boxes and labels
+   */
+  private createBoundingBoxSVG(
+    width: number,
+    height: number,
+    detectedLabels: DetectedLabel[],
+  ): string {
+    // Start SVG
+    let svg = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Add bounding boxes and labels
+    for (const label of detectedLabels) {
+      if (label.boundingBox) {
+        const box = label.boundingBox;
+        const x = Math.floor(box.left * width);
+        const y = Math.floor(box.top * height);
+        const boxWidth = Math.floor(box.width * width);
+        const boxHeight = Math.floor(box.height * height);
+
+        // Determine color based on confidence or category
+        let color = "rgba(255, 0, 0, 0.9)"; // Default red with higher opacity
+        let boxStrokeColor = "rgba(255, 0, 0, 1)"; // Solid color for box stroke
+
+        if (label.category) {
+          // Assign colors by category
+          switch (label.category) {
+            case "Damage":
+              color = "rgba(255, 0, 0, 0.9)"; // Red
+              boxStrokeColor = "rgba(255, 0, 0, 1)";
+              break;
+            case "Furniture":
+              color = "rgba(0, 255, 0, 0.9)"; // Green
+              boxStrokeColor = "rgba(0, 255, 0, 1)";
+              break;
+            case "Appliances":
+              color = "rgba(0, 0, 255, 0.9)"; // Blue
+              boxStrokeColor = "rgba(0, 0, 255, 1)";
+              break;
+            case "Fixtures":
+              color = "rgba(255, 165, 0, 0.9)"; // Orange
+              boxStrokeColor = "rgba(255, 165, 0, 1)";
+              break;
+            default:
+              color = "rgba(255, 255, 0, 0.9)"; // Yellow
+              boxStrokeColor = "rgba(255, 255, 0, 1)";
+          }
+        } else if (label.confidence > 0.8) {
+          color = "rgba(0, 255, 0, 0.9)"; // Green for high confidence
+          boxStrokeColor = "rgba(0, 255, 0, 1)";
+        } else if (label.confidence > 0.6) {
+          color = "rgba(255, 165, 0, 0.9)"; // Orange for medium confidence
+          boxStrokeColor = "rgba(255, 165, 0, 1)";
+        }
+
+        // Add rectangle for bounding box with thicker stroke
+        svg += `<rect x="${x}" y="${y}" width="${boxWidth}" height="${boxHeight}" 
+              stroke="${boxStrokeColor}" stroke-width="8" fill="none" />`;
+
+        // Calculate a much larger text size based on image dimensions
+        const fontSize = Math.max(24, Math.min(36, Math.floor(width / 30)));
+
+        // Calculate label position - try to place it above the box if possible
+        // or inside the top of the box if near the top of the image
+        const textY = y < 50 ? y + 40 : y - 15;
+
+        // Increase label box width and height to accommodate larger text
+        const labelWidth = Math.max(
+          200,
+          label.name.length * fontSize * 0.7 + 90,
+        );
+        const labelHeight = Math.max(40, fontSize + 16);
+
+        // Use a dark background with outline for better contrast
+        const labelBoxY = textY - fontSize;
+
+        // Add black outline around label background for better visibility
+        svg += `<rect x="${x - 2}" y="${labelBoxY - 2}" width="${labelWidth + 4}" height="${labelHeight + 4}" 
+              fill="black" />`;
+
+        // Add background for better label readability
+        svg += `<rect x="${x}" y="${labelBoxY}" width="${labelWidth}" height="${labelHeight}" 
+              fill="${color}" />`;
+
+        // Add label text with confidence - using larger font size with black outline for better readability
+        const confidencePercent = Math.round(label.confidence * 100);
+
+        // Text with black outline for better visibility against any background
+        svg += `
+          <text x="${x + 5}" y="${textY}" 
+                font-family="Arial" font-weight="bold" font-size="${fontSize}px"
+                style="filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.9))">
+            <tspan fill="yellow">${label.name} (${confidencePercent}%)</tspan>
+          </text>
+        `;
+      }
+    }
+
+    svg += `</svg>`;
+    return svg;
   }
 
   /**

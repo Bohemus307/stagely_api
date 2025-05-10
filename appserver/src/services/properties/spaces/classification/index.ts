@@ -15,7 +15,6 @@ export class SpaceClassificationService {
   private rekognition: RekognitionClient;
   private imageProcessor: ImageProcessor;
   private labelProcessor: LabelProcessor;
-  private cache: Map<string, ClassificationResult> = new Map();
 
   constructor(fastifyS3: S3Config) {
     console.log(`[INIT] Initializing SpaceClassificationService`);
@@ -50,14 +49,6 @@ export class SpaceClassificationService {
     const startTime = Date.now();
 
     try {
-      // Check cache first
-      const cacheKey = this.getCacheKey(imageUrl);
-      if (this.cache.has(cacheKey)) {
-        console.log(`[CLASSIFY] Cache hit for ${cacheKey}`);
-        return this.cache.get(cacheKey)!;
-      }
-      console.log(`[CLASSIFY] Cache miss for ${cacheKey}`);
-
       // Extract S3 key from URL
       const key = this.imageProcessor.extractS3Key(imageUrl);
       console.log(`[CLASSIFY] Extracted S3 key: ${key}`);
@@ -98,10 +89,6 @@ export class SpaceClassificationService {
         `[CLASSIFY] Classification completed in ${totalTime}ms. Result: Space=${result.spaceType}, Confidence=${result.confidenceScore}`,
       );
 
-      // Cache the result
-      this.cache.set(cacheKey, result);
-      console.log(`[CLASSIFY] Result cached for ${cacheKey}`);
-
       return result;
     } catch (error) {
       console.error(
@@ -119,13 +106,6 @@ export class SpaceClassificationService {
         featureVector: {},
       };
     }
-  }
-
-  /**
-   * Create a cache key from image URL
-   */
-  private getCacheKey(imageUrl: string): string {
-    return imageUrl.split("?")[0]; // Strip query parameters for more effective caching
   }
 
   /**

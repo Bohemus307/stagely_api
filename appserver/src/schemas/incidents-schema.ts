@@ -26,6 +26,11 @@ const incidentBaseSchema = {
       type: "boolean",
       default: false,
     },
+    labeledImageUrl: {
+      type: "string",
+      nullable: true,
+      description: "URL to the image with AI-detected bounding boxes",
+    },
     featureVector: {
       type: "object",
       nullable: true,
@@ -232,6 +237,11 @@ export const incidentResponseSchema = {
     images: {
       type: "array",
       items: incidentImageSchema,
+    },
+    labeledImageUrl: {
+      type: "string",
+      nullable: true,
+      description: "URL to the image with AI-detected bounding boxes",
     },
     objectLabels: {
       type: "array",

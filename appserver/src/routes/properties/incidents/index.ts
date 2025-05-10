@@ -1035,6 +1035,11 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               nullable: true,
             },
             aiClassified: { type: "boolean" },
+            labeledImageUrl: {
+              type: "string",
+              nullable: true,
+              description: "URL to the image with AI-detected bounding boxes",
+            },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
           },
@@ -1076,6 +1081,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             incident = await incidentService.createIncidentFromImage(
               property.id,
               incidentData.imageUrl,
+              user.id.toString(),
               incidentData.metadata,
             );
           } catch (error) {

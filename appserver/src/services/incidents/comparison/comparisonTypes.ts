@@ -11,6 +11,7 @@ export interface IncidentDetectionResult {
   detectedLabels: DetectedLabel[];
   changes: DetectedChange[];
   featureVector: Prisma.JsonValue;
+  labeledImageUrl?: string; // Add this field
 }
 
 // Label detected in an image

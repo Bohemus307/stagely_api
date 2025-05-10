@@ -146,7 +146,7 @@ export class IncidentService {
               propertyImages,
             );
 
-          // Update incident with classification results
+          // Update incident with classification results // more to come now
           await this.incidentRepo.updateIncident(incident.id, {
             incidentType: detectionResult.incidentType || incident.incidentType,
             severity: detectionResult.severity || incident.severity,
@@ -695,7 +695,6 @@ export class IncidentService {
             severity: detectionResult.severity || IncidentSeverity.Low,
             status: IncidentStatus.Open,
             spaceType: spaceType as SpaceType,
-            // Fix: Use Prisma.JsonNull for null values in JSON fields
             featureVector: detectionResult.featureVector || Prisma.JsonNull,
             aiClassified: true,
             resolvedAt: null,
@@ -765,6 +764,7 @@ export class IncidentService {
   async createIncidentFromImage(
     propertyId: number,
     imageUrl: string,
+    userId: string,
     metadata?: any,
   ): Promise<IncidentWithFullRelations> {
     // Check if property exists
@@ -810,10 +810,26 @@ export class IncidentService {
         await this.spaceClassificationService.classifyImage(imageUrl);
 
       // 2. Then use incident classification to detect issues
+      console.log(
+        `[SERVICE] Detecting incidents with propertyId=${propertyId}, userId=${userId}`,
+      );
       const incidentClassification =
         await this.incidentClassificationService.detectIncidents(
           propertyImage as PropertyImage,
+          [], // No previous images
+          propertyId, // Pass property ID
+          userId, // Pass user ID
         );
+
+      console.log(
+        `[SERVICE] Incident classification result: ${JSON.stringify({
+          type: incidentClassification.incidentType,
+          severity: incidentClassification.severity,
+          labeledImageUrl: incidentClassification.labeledImageUrl
+            ? "present"
+            : "missing",
+        })}`,
+      );
 
       // 3. Create a properly classified incident with combined results
       const newIncident = await this.incidentRepo.createIncident({
@@ -827,6 +843,7 @@ export class IncidentService {
         spaceType: spaceClassification.spaceType,
         featureVector: incidentClassification.featureVector || Prisma.JsonNull,
         aiClassified: true,
+        labeledImageUrl: incidentClassification.labeledImageUrl,
       });
 
       // 4. Associate the image with the new incident

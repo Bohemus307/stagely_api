@@ -34,7 +34,6 @@ export class IncidentClassificationService {
   private comparisonProcessor: ImageComparisonProcessor;
   private severityAssessor: SeverityAssessor;
   private spaceClassifier: SpaceClassificationService;
-  private cache: Map<string, IncidentDetectionResult> = new Map();
 
   constructor(
     s3Config: S3Config,
@@ -46,7 +45,7 @@ export class IncidentClassificationService {
     this.rekognition = new RekognitionClient({
       region: s3Config.region,
       requestHandler: {
-        timeoutInMs: 12000, // 12 second timeout
+        timeoutInMs: 15000, // 15 second timeout
       } as any,
     });
 
@@ -68,6 +67,8 @@ export class IncidentClassificationService {
   async detectIncidents(
     newImage: PropertyImage,
     previousImages: PropertyImage[] = [],
+    propertyId?: number,
+    userId?: string,
   ): Promise<IncidentDetectionResult> {
     console.log(
       `[INCIDENT-DETECT] Starting incident detection for image: ${newImage.id}`,
@@ -75,13 +76,6 @@ export class IncidentClassificationService {
     const startTime = Date.now();
 
     try {
-      // Check cache first
-      const cacheKey = this.getCacheKey(newImage.imageUrl);
-      if (this.cache.has(cacheKey)) {
-        console.log(`[INCIDENT-DETECT] Cache hit for ${cacheKey}`);
-        return this.cache.get(cacheKey)!;
-      }
-
       // Get optimized image data for the new image
       const imageKey = this.imageProcessor.extractS3Key(newImage.imageUrl);
       const imageData =
@@ -148,9 +142,13 @@ export class IncidentClassificationService {
         initialSeverity,
       );
 
+      // Check overall confidence - if less than 80%, set as "Unknown Issue"
+      const finalIncidentType =
+        confidence >= 0.8 ? incidentType : "Unknown Issue";
+
       // Create feature vector
       const featureVector: Prisma.JsonValue = {
-        incidentType,
+        incidentType: finalIncidentType,
         severity: finalSeverity,
         confidence,
         spaceType: spaceClassification.spaceType,
@@ -159,23 +157,47 @@ export class IncidentClassificationService {
         detectedObjects: detectedLabels.map((l) => l.name),
       };
 
+      // Generate labeled image if propertyId and userId are provided and there are labels to show
+      let labeledImageUrl: string | undefined;
+      if (propertyId && userId && detectedLabels.length > 0) {
+        try {
+          console.log(
+            `[INCIDENT-DETECT] Generating labeled image for propertyId=${propertyId}, userId=${userId}`,
+          );
+          labeledImageUrl = await this.imageProcessor.drawBoundingBoxesOnImage(
+            imageKey,
+            detectedLabels,
+            propertyId,
+            userId,
+          );
+        } catch (imageError) {
+          console.error(
+            "[INCIDENT-DETECT] Error generating labeled image:",
+            imageError,
+          );
+          // Continue without labeled image if generation fails
+        }
+      } else {
+        console.log(
+          `[INCIDENT-DETECT] Not generating labeled image: propertyId=${propertyId}, userId=${userId}, labels=${detectedLabels.length}`,
+        );
+      }
+
       // Create final result
       const result: IncidentDetectionResult = {
-        incidentType,
+        incidentType: finalIncidentType,
         severity: finalSeverity,
         confidenceScore: confidence,
         spaceType: spaceClassification.spaceType,
         detectedLabels,
         changes,
         featureVector,
+        labeledImageUrl, // Include the labeled image URL if available
       };
-
-      // Cache the result
-      this.cache.set(cacheKey, result);
 
       const totalTime = Date.now() - startTime;
       console.log(
-        `[INCIDENT-DETECT] Detection completed in ${totalTime}ms. Result: Type=${incidentType}, Severity=${finalSeverity}, Changes=${changes.length}`,
+        `[INCIDENT-DETECT] Detection completed in ${totalTime}ms. Result: Type=${finalIncidentType}, Severity=${finalSeverity}, Changes=${changes.length}, LabeledImage=${labeledImageUrl ? "Yes" : "No"}`,
       );
 
       return result;
@@ -195,13 +217,6 @@ export class IncidentClassificationService {
         featureVector: {},
       };
     }
-  }
-
-  /**
-   * Create a cache key from image URL
-   */
-  private getCacheKey(imageUrl: string): string {
-    return imageUrl.split("?")[0]; // Strip query parameters
   }
 
   /**
