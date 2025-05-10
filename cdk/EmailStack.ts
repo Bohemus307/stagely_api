@@ -4,9 +4,8 @@ import { Construct } from "constructs";
 import * as ses from "aws-cdk-lib/aws-ses";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as route53 from "aws-cdk-lib/aws-route53";
-import { APP_NAME } from "./configuration";
-import { AppEnvironment } from "./ComputeStack";
-import createSSMParameters from "./createSSMParameters";
+import { APP_NAME, HOSTED_ZONE_ID, HOSTED_ZONE_NAME } from "./configuration";
+
 
 export interface EmailStackProps extends cdk.StackProps {
   deploymentEnv: string;
@@ -18,13 +17,12 @@ export class EmailStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: EmailStackProps) {
     super(scope, id, props);
 
-    // Import the hosted zone
     const hostedZone = route53.HostedZone.fromHostedZoneAttributes(
       this,
       `${APP_NAME}-hosted-zone`,
       {
-        zoneName: props.domain,
-        hostedZoneId: props.hostedZoneId,
+        zoneName: HOSTED_ZONE_NAME,
+        hostedZoneId: HOSTED_ZONE_ID,
       }
     );
 
@@ -69,43 +67,29 @@ export class EmailStack extends cdk.Stack {
       mailFromDomain: `mail.${props.domain}`,
     });
 
-    // Define SSM parameters for email configuration
-    const emailSsmParamsConfig = () => {
-      const appEnv = props.deploymentEnv as AppEnvironment;
-      return [
-        {
-          name: `/email/from-address-${appEnv}`,
-          envKey: "SES_FROM_ADDRESS",
-          description: `Default from email address for ${appEnv}`,
-          environments: {
-            [appEnv]: `no-reply@${props.domain}`,
-          },
-        },
-        {
-          name: `/email/reply-to-address-${appEnv}`,
-          envKey: "SES_REPLY_TO_ADDRESS",
-          description: `Default reply-to email address for ${appEnv}`,
-          environments: {
-            [appEnv]: `support@${props.domain}`,
-          },
-        },
-        {
-          name: `/email/ses-region-${appEnv}`,
-          envKey: "SES_REGION",
-          description: `AWS region for SES service for ${appEnv}`,
-          environments: {
-            [appEnv]: this.region,
-          },
-        },
-      ];
-    };
+    // Define email configuration for this environment
+    const fromAddress = `no-reply@${HOSTED_ZONE_NAME}`;
+    const replyToAddress = `support@${HOSTED_ZONE_NAME}`;
+    const sesRegion = this.region;
 
-    // Create SSM parameters
-    const emailSsmParams = createSSMParameters(
-      this,
-      emailSsmParamsConfig(),
-      props.deploymentEnv as AppEnvironment
-    );
+    // Export email configuration as CloudFormation outputs
+    new cdk.CfnOutput(this, "FromEmailAddress", {
+      value: fromAddress,
+      description: "Default FROM email address",
+      exportName: `${APP_NAME}-${props.deploymentEnv}-FromEmailAddress`,
+    });
+
+    new cdk.CfnOutput(this, "ReplyToEmailAddress", {
+      value: replyToAddress,
+      description: "Default REPLY-TO email address",
+      exportName: `${APP_NAME}-${props.deploymentEnv}-ReplyToEmailAddress`,
+    });
+
+    new cdk.CfnOutput(this, "SESRegion", {
+      value: sesRegion,
+      description: "AWS region for SES service",
+      exportName: `${APP_NAME}-${props.deploymentEnv}-SESRegion`,
+    });
 
     // Output the role ARN for reference
     new cdk.CfnOutput(this, "SESRoleArn", {

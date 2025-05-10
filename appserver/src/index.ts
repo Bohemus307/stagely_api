@@ -17,6 +17,7 @@ import prismaPlugin from "./plugins/prismaPlugin";
 import auth0Plugin from "./plugins/auth0Plugin";
 import s3Plugin from "./plugins/s3Plugin";
 import dynamoDB from "./plugins/dynamoDB";
+import emailPlugin from "./plugins/emailPlugin";
 
 // Load environment variables from .env file
 config();
@@ -167,6 +168,7 @@ server.register(require("@fastify/swagger"), {
       { name: "s3", description: "Image Url management" },
       { name: "users", description: "Creation and management of users" },
       { name: "messaging", description: "Creation and management of messages" },
+      { name: "email", description: "Creation of invite messages" },
     ],
     securityDefinitions: {
       bearerAuth: {
@@ -201,6 +203,7 @@ server.register(prismaPlugin);
 server.register(healthPlugin);
 server.register(s3Plugin);
 server.register(dynamoDB);
+server.register(emailPlugin);
 
 server.register(auth0Plugin, {
   domain: serverConfig.DOMAIN,

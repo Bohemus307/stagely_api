@@ -1,13 +1,7 @@
 // src/routes/messaging/index.ts
 import { FastifyInstance } from "fastify";
 import { MessagingService } from "../../services/messaging";
-import {
-  DynamoDBConversation,
-} from "../../repositories/dynamoDB/conversationRepository";
 import { sendNotFound, sendForbidden, sendUnauthorized } from "../../utils/responses";
-import { EmailService } from "../../services/email/index";
-import { v4 as uuidv4 } from 'uuid';
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
 // Define interface types for request parameters and bodies
 interface CreateConversationBody {
@@ -109,6 +103,7 @@ fastify.route({
   },
   handler: async (request, reply) => {
     try {
+      // Get current user - still need this in the route handler to authenticate
       const currentUser = await fastify.prisma.user.findUnique({
         where: { auth0Id: request?.user?.sub }
       });
@@ -122,99 +117,44 @@ fastify.route({
         initialMessage?: string;
       };
 
-      // First check if user exists
-      let user = await fastify.prisma.user.findFirst({
-        where: {
-          email,
-          isPlaceholder: false
-        }
-      });
-
-      if (!user) {
-        // Check for existing invitation
-        user = await fastify.prisma.user.findFirst({
-          where: {
-            email,
-            isPlaceholder: true,
-            expiresAt: {
-              gt: new Date()
-            }
-          }
-        });
-
-        if (!user) {
-          // Create new invitation/placeholder user directly
-          const invitationToken = uuidv4();
-
-          // Set expiration date to 7 days from now
-          const expiresAt = new Date();
-          expiresAt.setDate(expiresAt.getDate() + 7);
-
-          // Create placeholder user
-          user = await fastify.prisma.user.create({
-            data: {
-              email,
-              firstName: "Invited",
-              lastName: "User",
-              auth0Id: `placeholder-${invitationToken}`,
-              isPlaceholder: true,
-              invitationToken,
-              invitedById: currentUser.id,
-              expiresAt
-            }
-          });
-
-          try {
-            await fastify.email.sendInvitationEmail(
-              email,
-              invitationToken,
-              `${currentUser.firstName} ${currentUser.lastName}`
-            );
-            fastify.log.info(`Invitation email sent to ${email}`);
-          } catch (emailError) {
-            fastify.log.error("Failed to send invitation email:", emailError);
-            // Continue even if email fails
-          }
-        }
-      }
-
-      // Create conversation with the user
-      const conversation = await messagingService.createConversation(
+      // Use the service to handle all business logic
+      const result = await messagingService.inviteUserAndCreateConversation(
         currentUser.id,
-        [user.id],
-        'general'
+        email,
+        initialMessage
       );
 
-      // Send initial message if provided
-      let message;
-      if (initialMessage) {
-        message = await messagingService.sendMessage(
-          conversation.conversationId,
-          currentUser.id,
-          initialMessage
-        );
+      // If invitation token exists, send an email
+      if (result.invitationToken) {
+        try {
+          await fastify.email.sendInvitationEmail(
+            email,
+            result.invitationToken,
+            `${currentUser.firstName} ${currentUser.lastName}`
+          );
+          fastify.log.info(`Invitation email sent to ${email}`);
+        } catch (emailError) {
+          fastify.log.error("Failed to send invitation email:", emailError);
+          // Continue even if email fails
+        }
       }
+
+      // Remove invitationToken from response
+      const { invitationToken, ...responseData } = result;
 
       return {
         success: true,
-        conversation,
-        message: message || null,
-        user: {
-          id: user.id,
-          email: user.email,
-          isPlaceholder: !!user.isPlaceholder
-        }
+        ...responseData
       };
     } catch (err: any) {
       fastify.log.error(err);
       reply.code(500).send({
         success: false,
         error: err.message || 'An unknown error occurred'
-
       });
     }
   }
-  });
+});
 
 
   // Get all conversations for the current user
@@ -255,7 +195,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -329,7 +268,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -409,7 +347,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -493,7 +430,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -581,7 +517,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -607,8 +542,7 @@ fastify.route({
         const message = await messagingService.sendMessage(
           conversationId,
           user.id,
-          text,
-          fastify
+          text
         );
 
         return {
@@ -667,7 +601,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -751,7 +684,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });
@@ -832,7 +764,6 @@ fastify.route({
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
           where: { auth0Id: request?.user?.sub },
         });

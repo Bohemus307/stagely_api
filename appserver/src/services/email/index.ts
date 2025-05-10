@@ -1,6 +1,6 @@
-// src/services/email/index.ts
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+// src/services/email/index.ts";
 
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses"
 export class EmailService {
   private readonly sesClient: SESClient;
   private readonly defaultFromAddress: string;

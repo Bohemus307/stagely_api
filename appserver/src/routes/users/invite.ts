@@ -1,17 +1,8 @@
 // src/routes/users/invite.ts
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { v4 as uuidv4 } from "uuid";
-import { sendUnauthorized, sendNotFound, sendConflict } from "../../utils/responses";
-import { EmailService } from "../../services/email/index";
-
-declare module 'fastify' {
-  interface FastifyInstance {
-    email: {
-      service: EmailService;
-      sendInvitationEmail: (email: string, token: string, inviterName: string) => Promise<string>;
-    }
-  }
-}
+import { sendUnauthorized, sendNotFound } from "../../utils/responses";
+import { InvitationService } from "../../services/invitation";
+import { UserRepository } from "../../repositories/userRepository";
 
 interface InviteUserBody {
   email: string;
@@ -21,6 +12,10 @@ interface InviteUserBody {
  * User invitation routes
  */
 async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
+  // Initialize repository and service
+  const userRepository = new UserRepository(fastify.prisma);
+  const invitationService = new InvitationService(userRepository, fastify.email);
+
   // Invite a user
   fastify.route({
     method: "POST",
@@ -61,97 +56,28 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        const currentUser = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub }
-        });
+        // Extract Auth0 ID with proper type checking
+        const auth0Id = request?.user?.sub;
+        if (!auth0Id) {
+          return sendUnauthorized(reply, "Invalid authentication token");
+        }
 
+        const currentUser = await userRepository.getUserByAuth0Id(auth0Id);
         if (!currentUser) {
           return sendUnauthorized(reply, "User not found");
         }
 
         const { email } = request.body as InviteUserBody;
 
-        // Check if user already exists
-        let user = await fastify.prisma.user.findUnique({
-          where: {
-            email,
-            isPlaceholder: false
-          }
-        });
-
-        if (user) {
-          // User already exists - return existing user
-          return {
-            success: true,
-            user: {
-              id: user.id,
-              email: user.email,
-              isPlaceholder: false
-            }
-          };
-        }
-
-        // Check for existing invitation
-        user = await fastify.prisma.user.findFirst({
-          where: {
-            email,
-            isPlaceholder: true,
-            expiresAt: {
-              gt: new Date()
-            }
-          }
-        });
-
-        if (user) {
-          // Invitation already exists - return the placeholder user
-          return {
-            success: true,
-            user: {
-              id: user.id,
-              email: user.email,
-              isPlaceholder: true
-            }
-          };
-        }
-
-        // Create new placeholder user with invitation
-        const invitationToken = uuidv4();
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
-
-        const newUser = await fastify.prisma.user.create({
-          data: {
-            email,
-            firstName: "Invited",
-            lastName: "User",
-            auth0Id: `placeholder-${invitationToken}`,
-            isPlaceholder: true,
-            invitationToken,
-            invitedById: currentUser.id,
-            expiresAt
-          }
-        });
-
-        // Send invitation email
-        try {
-          // Using the fastify.email plugin instead of directly instantiating EmailService
-          await fastify.email.sendInvitationEmail(
-            email,
-            invitationToken,
-            `${currentUser.firstName} ${currentUser.lastName}`
-          );
-        } catch (error) {
-          fastify.log.error("Failed to send invitation email:", error);
-          // Continue even if email sending fails
-        }
+        const result = await invitationService.inviteUser(
+          email,
+          currentUser.id,
+          `${currentUser.firstName} ${currentUser.lastName}`
+        );
 
         return {
           success: true,
-          user: {
-            id: newUser.id,
-            email: newUser.email,
-            isPlaceholder: true
-          }
+          user: result.user
         };
       } catch (err: any) {
         fastify.log.error(err);
@@ -196,51 +122,23 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        const currentUser = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub }
-        });
+        // Extract Auth0 ID with proper type checking
+        const auth0Id = request?.user?.sub;
+        if (!auth0Id) {
+          return sendUnauthorized(reply, "Invalid authentication token");
+        }
 
+        const currentUser = await userRepository.getUserByAuth0Id(auth0Id);
         if (!currentUser) {
           return sendUnauthorized(reply, "User not found");
         }
 
         const { token } = request.body as { token: string };
 
-        // Find the placeholder user
-        const placeholderUser = await fastify.prisma.user.findFirst({
-          where: {
-            invitationToken: token,
-            isPlaceholder: true,
-            expiresAt: {
-              gt: new Date()
-            }
-          }
-        });
+        const success = await invitationService.acceptInvitation(token, currentUser);
 
-        if (!placeholderUser) {
+        if (!success) {
           return sendNotFound(reply, "Invitation not found or expired");
-        }
-
-        // Update the placeholder user with current user's details
-        await fastify.prisma.user.update({
-          where: { id: placeholderUser.id },
-          data: {
-            auth0Id: currentUser.auth0Id,
-            firstName: currentUser.firstName,
-            lastName: currentUser.lastName,
-            profilePictureUrl: currentUser.profilePictureUrl,
-            isPlaceholder: false,
-            invitationToken: null,
-            expiresAt: null
-          }
-        });
-
-        // Delete the current user since we're transferring identity
-        // Only do this if the users are different
-        if (currentUser.id !== placeholderUser.id) {
-          await fastify.prisma.user.delete({
-            where: { id: currentUser.id }
-          });
         }
 
         return {
@@ -290,20 +188,9 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         const { token } = request.query as { token: string };
 
-        const placeholderUser = await fastify.prisma.user.findFirst({
-          where: {
-            invitationToken: token,
-            isPlaceholder: true,
-            expiresAt: {
-              gt: new Date()
-            }
-          }
-        });
+        const result = await invitationService.checkInvitation(token);
 
-        return {
-          valid: !!placeholderUser,
-          email: placeholderUser?.email || null
-        };
+        return result;
       } catch (err: any) {
         fastify.log.error(err);
 

@@ -4,6 +4,8 @@ import { DynamoDBConversationRepository, DynamoDBConversation } from "../../repo
 import { DynamoDBMessageRepository, DynamoDBMessage } from "../../repositories/dynamoDB/messageRepository";
 import { DynamoDBConnectionRepository } from "../../repositories/dynamoDB/connectionRepository";
 import { NotFoundError } from "../../utils/errors";
+import { UserRepository } from "../../repositories/userRepository";
+import { v4 as uuidv4 } from 'uuid';
 
 export class MessagingService {
   private readonly prisma: PrismaClient;
@@ -11,6 +13,7 @@ export class MessagingService {
   private readonly conversationRepo: DynamoDBConversationRepository;
   private readonly messageRepo: DynamoDBMessageRepository;
   private readonly connectionRepo: DynamoDBConnectionRepository;
+  private readonly userRepo: UserRepository;
 
   constructor(prisma: PrismaClient, documentClient: any) {
     this.prisma = prisma;
@@ -19,7 +22,87 @@ export class MessagingService {
     this.conversationRepo = new DynamoDBConversationRepository(documentClient, deploymentEnv);
     this.messageRepo = new DynamoDBMessageRepository(documentClient, deploymentEnv);
     this.connectionRepo = new DynamoDBConnectionRepository(documentClient, deploymentEnv);
+    this.userRepo = new UserRepository(prisma);
   }
+
+  // Add this new method at the top of your MessagingService class
+/**
+ * Handle user invitation and create conversation
+ */
+async inviteUserAndCreateConversation(
+  currentUserId: number,
+  email: string,
+  initialMessage?: string
+): Promise<{
+  conversation: DynamoDBConversation;
+  message?: DynamoDBMessage;
+  user: {
+    id: number;
+    email: string;
+    isPlaceholder: boolean;
+  };
+  invitationToken?: string;
+}> {
+  // Get current user using repository
+  const currentUser = await this.userRepo.getUserById(currentUserId);
+  if (!currentUser) {
+    throw new Error("Current user not found");
+  }
+
+  // First check if user exists - using repository methods
+  let user = await this.userRepo.findActiveUserByEmail(email);
+  let invitationToken: string | undefined;
+
+  if (!user) {
+    // Check for existing invitation
+    user = await this.userRepo.findValidInvitationByEmail(email);
+
+    if (!user) {
+      // Create new invitation token
+      invitationToken = uuidv4();
+
+      // Set expiration date to 7 days from now
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      // Create placeholder user
+      user = await this.userRepo.createPlaceholderUser({
+        email,
+        invitationToken,
+        invitedById: currentUserId,
+        expiresAt
+      });
+    }
+  }
+
+  // Create conversation with the user
+  const conversation = await this.createConversation(
+    currentUserId,
+    [user.id],
+    'general'
+  );
+
+  // Send initial message if provided
+  let message;
+  if (initialMessage) {
+    message = await this.sendMessage(
+      conversation.conversationId,
+      currentUserId,
+      initialMessage
+    );
+  }
+
+  return {
+    conversation,
+    message,
+    user: {
+      id: user.id,
+      email: user.email,
+      isPlaceholder: !!user.isPlaceholder
+    },
+    invitationToken
+  };
+}
 
   /**
    * Create a new conversation
@@ -29,18 +112,16 @@ export class MessagingService {
   async createConversation(
     creatorId: number,
     participants: number[],
-    type: 'general' = 'general' // Add default value
+    type: 'general' = 'general'
   ): Promise<DynamoDBConversation> {
     // Ensure creator is in the participants list
     if (!participants.includes(creatorId)) {
       participants.push(creatorId);
     }
 
-    // Validate all participants exist in PostgreSQL
-    const validUsers = await this.prisma.user.findMany({
-      where: { id: { in: participants } },
-      select: { id: true }
-    });
+    // Validate all participants exist using UserRepository instead of direct Prisma
+    const participantPromises = participants.map(id => this.userRepo.getUserById(id));
+    const validUsers = (await Promise.all(participantPromises)).filter(Boolean);
 
     if (validUsers.length !== participants.length) {
       throw new Error('One or more participants do not exist');
@@ -98,74 +179,66 @@ export class MessagingService {
  * @param senderId - ID of the sender
  * @param text - Message text
  */
-async sendMessage(
-  conversationId: string,
-  senderId: number,
-  text: string,
-  fastify?: any
-): Promise<DynamoDBMessage> {
-
-  // Get conversation and verify sender is a participant
-  const conversation = await this.conversationRepo.getConversationById(conversationId);
-  if (!conversation) {
-    throw new NotFoundError(`Conversation not found: ${conversationId}`);
-  }
-
-  if (!conversation.participants.includes(senderId)) {
-    throw new Error('User is not a participant in this conversation');
-  }
-
-  // Create message
-  const message = await this.messageRepo.createMessage(
-    conversationId,
-    senderId,
-    text,
-    conversation.participants
-  );
-
-
-  // Update conversation with new message info
-  await this.conversationRepo.updateWithNewMessage(
-    conversationId,
-    senderId,
-    text
-  );
-
-  if (fastify && fastify.email) {
-    const sender = await this.prisma.user.findUnique({
-      where: { id: senderId },
-      select: { firstName: true, lastName: true }
-    });
-
-  const senderName = sender ? `${sender.firstName} ${sender.lastName}` : "A user";
-
-  // Get all conversation participants except sender
-  const recipients = await this.prisma.user.findMany({
-    where: {
-      id: { in: conversation.participants.filter(id => id !== senderId) }
+  async sendMessage(
+    conversationId: string,
+    senderId: number,
+    text: string,
+    fastify?: any
+  ): Promise<DynamoDBMessage> {
+    // Get conversation and verify sender is a participant
+    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    if (!conversation) {
+      throw new NotFoundError(`Conversation not found: ${conversationId}`);
     }
-  });
 
-  // Send email notification to all participants
-  for (const recipient of recipients) {
-    try {
-      await fastify.email.sendMessageNotification({
-        to: recipient.email,
-        senderName,
-        messageText: text,
-        sentAt: new Date().toLocaleString(),
-        conversationId
-      });
-
-      fastify.log.info(`Message notification sent to ${recipient.email}`);
-    } catch (error) {
-      fastify.log.error(`Failed to send message notification: ${error}`);
+    if (!conversation.participants.includes(senderId)) {
+      throw new Error('User is not a participant in this conversation');
     }
-  }
-  }
-  return message;
-}
 
+    // Create message
+    const message = await this.messageRepo.createMessage(
+      conversationId,
+      senderId,
+      text,
+      conversation.participants
+    );
+
+    // Update conversation with new message info
+    await this.conversationRepo.updateWithNewMessage(
+      conversationId,
+      senderId,
+      text
+    );
+
+    if (fastify && fastify.email) {
+      // Get sender info using repository
+      const sender = await this.userRepo.getUserById(senderId);
+      const senderName = sender ? `${sender.firstName} ${sender.lastName}` : "A user";
+
+      // Get all participants except sender - using repository
+      const participantIds = conversation.participants.filter(id => id !== senderId);
+      const recipientPromises = participantIds.map(id => this.userRepo.getUserById(id));
+      const recipients = (await Promise.all(recipientPromises)).filter(Boolean);
+
+      // Send email notification to all participants
+      for (const recipient of recipients) {
+        try {
+          await fastify.email.sendMessageNotification({
+            to: recipient.email,
+            senderName,
+            messageText: text,
+            sentAt: new Date().toLocaleString(),
+            conversationId
+          });
+
+          fastify.log.info(`Message notification sent to ${recipient.email}`);
+        } catch (error) {
+          fastify.log.error(`Failed to send message notification: ${error}`);
+        }
+      }
+    }
+    return message;
+  }
 
   /**
    * Get messages for a conversation
@@ -246,8 +319,8 @@ async sendMessage(
     participantId: number,
     requesterId: number
   ): Promise<DynamoDBConversation> {
-    // check if the participant exists
-    const participant = await this.prisma.user.findUnique({ where: { id: participantId } });
+    // Check if the participant exists - using repository
+    const participant = await this.userRepo.getUserById(participantId);
     if (!participant) {
       throw new NotFoundError(`Participant not found: ${participantId}`);
     }
@@ -285,8 +358,8 @@ async sendMessage(
     participantId: number,
     requesterId: number
   ): Promise<DynamoDBConversation> {
-    // Only need to check participant ID exists, requester already verified in route
-    const participant = await this.prisma.user.findUnique({ where: { id: participantId } });
+    // Check if participant exists - using repository
+    const participant = await this.userRepo.getUserById(participantId);
     if (!participant) {
       throw new NotFoundError(`Participant not found: ${participantId}`);
     }
@@ -298,7 +371,6 @@ async sendMessage(
     }
 
     // Check if requester has permission to remove participants
-    // For now, allowing users to remove themselves or if they're the conversation creator
     const canRemove = requesterId === participantId || conversation.participants.includes(requesterId);
     if (!canRemove) {
       throw new Error('User does not have permission to remove participants from this conversation');
