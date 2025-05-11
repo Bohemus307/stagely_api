@@ -237,6 +237,29 @@ export class IncidentRepository {
   }
 
   /**
+   * Update an incident with partial data
+   */
+  async updateIncident(
+    id: number,
+    data: Prisma.IncidentUpdateInput,
+  ): Promise<Incident> {
+    return this.prisma.incident.update({
+      where: { id },
+      data,
+    });
+  }
+
+  /**
+   * Get all images for a specific incident
+   */
+  async getIncidentImages(incidentId: number): Promise<PropertyImage[]> {
+    return this.prisma.propertyImage.findMany({
+      where: { incidentId },
+      orderBy: { takenAt: "desc" },
+    });
+  }
+
+  /**
    * Update incident status
    */
   async updateIncidentStatus(

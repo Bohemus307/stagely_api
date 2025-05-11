@@ -26,6 +26,15 @@ const incidentBaseSchema = {
       type: "boolean",
       default: false,
     },
+    labeledImageUrl: {
+      type: "string",
+      nullable: true,
+      description: "URL to the image with AI-detected bounding boxes",
+    },
+    featureVector: {
+      type: "object",
+      nullable: true,
+    },
   },
 };
 
@@ -35,6 +44,7 @@ export const createIncidentSchema = {
   properties: {
     ...incidentBaseSchema.properties,
     propertyId: { type: "integer" },
+    // Standard image array for manual creation
     images: {
       type: "array",
       items: {
@@ -45,18 +55,65 @@ export const createIncidentSchema = {
           takenAt: { type: "string", format: "date-time" },
           metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl", "takenAt"],
+        required: ["imageUrl"],
+      },
+    },
+    // Single image for AI classification
+    imageUrl: {
+      type: "string",
+      description: "URL to an image for automatic incident classification",
+    },
+    // Optional metadata for classification
+    metadata: {
+      type: "object",
+      description: "Additional metadata for the image classification process",
+      nullable: true,
+    },
+  },
+  required: ["propertyId"],
+  anyOf: [
+    { required: ["imageUrl"] },
+    { required: ["incidentType", "description", "severity"] },
+  ],
+  additionalProperties: false,
+};
+
+// Schema for the classify images endpoint
+export const classifyImagesSchema = {
+  type: "object",
+  properties: {
+    propertyId: {
+      type: "integer",
+      description: "ID of the property to create incidents for",
+    },
+    imageIds: {
+      type: "array",
+      items: { type: "integer" },
+      description: "Array of image IDs to classify and create incidents from",
+    },
+  },
+  required: ["propertyId", "imageIds"],
+  additionalProperties: false,
+};
+
+// Schema for the classify images response
+export const classifyImagesResponseSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      incidentId: { type: "integer" },
+      spaceType: {
+        type: "string",
+        enum: Object.values(SpaceType),
+      },
+      confidenceScore: { type: "number" },
+      objectLabels: {
+        type: "array",
+        items: { type: "string" },
       },
     },
   },
-  required: [
-    "propertyId",
-    "incidentType",
-    "description",
-    "severity",
-    "reportedAt",
-  ],
-  additionalProperties: false,
 };
 
 // Schema for updating an existing incident
@@ -75,7 +132,7 @@ export const updateIncidentSchema = {
           takenAt: { type: "string", format: "date-time" },
           metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl", "takenAt"],
+        required: ["imageUrl"],
       },
     },
   },
@@ -116,7 +173,7 @@ export const addIncidentImagesSchema = {
           takenAt: { type: "string", format: "date-time" },
           metadata: { type: "object", nullable: true },
         },
-        required: ["imageUrl", "takenAt"],
+        required: ["imageUrl"],
       },
     },
   },
@@ -160,7 +217,6 @@ export const incidentResponseSchema = {
     id: { type: "integer" },
     propertyId: { type: "integer" },
     ...incidentBaseSchema.properties,
-    featureVector: { type: "object", nullable: true },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
     property: {
@@ -182,6 +238,11 @@ export const incidentResponseSchema = {
       type: "array",
       items: incidentImageSchema,
     },
+    labeledImageUrl: {
+      type: "string",
+      nullable: true,
+      description: "URL to the image with AI-detected bounding boxes",
+    },
     objectLabels: {
       type: "array",
       items: incidentObjectLabelSchema,
@@ -201,7 +262,6 @@ export const incidentsResponseSchema = {
           id: { type: "integer" },
           propertyId: { type: "integer" },
           ...incidentBaseSchema.properties,
-          featureVector: { type: "object", nullable: true },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
           property: {
@@ -325,4 +385,6 @@ export default {
   incidentResponseSchema,
   incidentsResponseSchema,
   incidentStatsResponseSchema,
+  classifyImagesSchema,
+  classifyImagesResponseSchema,
 };
