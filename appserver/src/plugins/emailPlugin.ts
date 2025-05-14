@@ -23,5 +23,5 @@ export default fp(async (fastify, options: EmailPluginOptions = {}) => {
   fastify.log.info('Email service initialized');
 }, {
   name: 'email',
-  fastify: '4.x'
+  fastify: '5.x'
 });
