@@ -1,11 +1,17 @@
 // src/routes/users/invite.ts
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
-import { sendUnauthorized, sendNotFound } from "../../utils/responses";
+import { sendNotFound, sendUnauthorized } from "../../utils/responses";
 import { InvitationService } from "../../services/invitation";
 import { UserRepository } from "../../repositories/userRepository";
 
 interface InviteUserBody {
   email: string;
+}
+
+// Define User interface for type safety
+interface AuthUser {
+  sub: string;
+  [key: string]: any;
 }
 
 /**
@@ -56,13 +62,14 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        // Extract Auth0 ID with proper type checking
-        const auth0Id = request?.user?.sub;
-        if (!auth0Id) {
+        // The fastify.authenticate middleware ensures we have a user object
+        // but TypeScript needs type checking
+        const user = request.user as AuthUser | undefined;
+        if (!user?.sub) {
           return sendUnauthorized(reply, "Invalid authentication token");
         }
 
-        const currentUser = await userRepository.getUserByAuth0Id(auth0Id);
+        const currentUser = await userRepository.getUserByAuth0Id(user.sub);
         if (!currentUser) {
           return sendUnauthorized(reply, "User not found");
         }
@@ -122,13 +129,13 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        // Extract Auth0 ID with proper type checking
-        const auth0Id = request?.user?.sub;
-        if (!auth0Id) {
+        // Type checking for TypeScript
+        const user = request.user as AuthUser | undefined;
+        if (!user?.sub) {
           return sendUnauthorized(reply, "Invalid authentication token");
         }
 
-        const currentUser = await userRepository.getUserByAuth0Id(auth0Id);
+        const currentUser = await userRepository.getUserByAuth0Id(user.sub);
         if (!currentUser) {
           return sendUnauthorized(reply, "User not found");
         }
@@ -204,3 +211,4 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
 }
 
 export default inviteRoutes;
+

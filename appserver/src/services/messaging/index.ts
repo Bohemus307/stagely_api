@@ -105,33 +105,51 @@ async inviteUserAndCreateConversation(
 }
 
   /**
-   * Create a new conversation
-   * @param creatorId - User ID of the conversation creator
-   * @param participants - Array of participant user IDs
-   */
-  async createConversation(
-    creatorId: number,
-    participants: number[],
-    type: 'general' = 'general'
-  ): Promise<DynamoDBConversation> {
-    // Ensure creator is in the participants list
-    if (!participants.includes(creatorId)) {
-      participants.push(creatorId);
-    }
-
-    // Validate all participants exist using UserRepository instead of direct Prisma
-    const participantPromises = participants.map(id => this.userRepo.getUserById(id));
-    const validUsers = (await Promise.all(participantPromises)).filter(Boolean);
-
-    if (validUsers.length !== participants.length) {
-      throw new Error('One or more participants do not exist');
-    }
-
-    return this.conversationRepo.createConversation({
-      participants,
-      conversationType: type
-    });
+ * Create a new conversation
+ * @param creatorId - User ID of the conversation creator
+ * @param participants - Array of participant user IDs
+ */
+async createConversation(
+  creatorId: number,
+  participants: number[],
+  type: 'general' = 'general'
+): Promise<DynamoDBConversation> {
+  // Ensure creator is in the participants list
+  if (!participants.includes(creatorId)) {
+    participants.push(creatorId);
   }
+
+  // For one-on-one conversations (most common case), optimize the query
+  if (participants.length === 2 && participants[0] === creatorId) {
+    // We only need to validate the other participant
+    const otherUser = await this.userRepo.getUserById(participants[1]);
+    if (!otherUser) {
+      throw new Error(`Participant with ID ${participants[1]} does not exist`);
+    }
+  } else if (participants.length === 2 && participants[1] === creatorId) {
+    // We only need to validate the other participant
+    const otherUser = await this.userRepo.getUserById(participants[0]);
+    if (!otherUser) {
+      throw new Error(`Participant with ID ${participants[0]} does not exist`);
+    }
+  } else {
+    // For group conversations, validate all participants at once
+    const validUsers = await this.userRepo.getUsersByIds(participants);
+
+    // Check if all participants exist
+    if (validUsers.length !== participants.length) {
+      // Find which participants don't exist for better error message
+      const foundIds = validUsers.map(user => user.id);
+      const missingIds = participants.filter(id => !foundIds.includes(id));
+      throw new Error(`Participants not found: ${missingIds.join(', ')}`);
+    }
+  }
+
+  return this.conversationRepo.createConversation({
+    participants,
+    conversationType: type
+  });
+}
 
   /**
    * Get conversations for a user

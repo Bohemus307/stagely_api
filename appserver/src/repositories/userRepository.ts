@@ -296,6 +296,21 @@ export class UserRepository {
   }
 
   /**
+ * Get multiple users by their IDs
+ * @param ids - Array of user IDs to retrieve
+ * @returns Array of found users
+ */
+async getUsersByIds(ids: number[]): Promise<User[]> {
+  if (!ids.length) return [];
+
+  return this.prisma.user.findMany({
+    where: {
+      id: { in: ids }
+    }
+  });
+}
+
+  /**
    * Check if email exists for another user
    */
   async isEmailTaken(email: string, excludeUserId?: number): Promise<boolean> {
