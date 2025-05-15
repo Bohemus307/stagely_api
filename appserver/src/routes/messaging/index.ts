@@ -1,19 +1,26 @@
 // src/routes/messaging/index.ts
 import { FastifyInstance } from "fastify";
 import { MessagingService } from "../../services/messaging";
-import { sendNotFound, sendForbidden, sendUnauthorized } from "../../utils/responses";
+import {
+  sendNotFound,
+  sendForbidden,
+  sendUnauthorized,
+} from "../../utils/responses";
 
 // Define interface types for request parameters and bodies
 interface CreateConversationBody {
+  userId: number;
   participants: number[];
   initialMessage?: string;
 }
 
 interface SendMessageBody {
+  userId: number;
   text: string;
 }
 
 interface MarkReadBody {
+  userId: number;
   messageIds: string[];
 }
 
@@ -26,6 +33,7 @@ interface ParticipantParams extends ConversationParams {
 }
 
 interface QueryParams {
+  userId: number;
   limit?: string;
   lastKey?: string;
 }
@@ -39,14 +47,18 @@ interface InviteUserResponse {
   };
 }
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyInstance {
     dynamoDB: {
       client: any;
       documentClient: any;
     };
     email: {
-      sendInvitationEmail: (email: string, token: string, inviterName: string) => Promise<string>;
+      sendInvitationEmail: (
+        email: string,
+        token: string,
+        inviterName: string,
+      ) => Promise<string>;
     };
   }
 }
@@ -60,102 +72,111 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
   // Create messaging service
   const messagingService = new MessagingService(
     fastify.prisma,
-    fastify.dynamoDB.documentClient
+    fastify.dynamoDB.documentClient,
   );
 
-
-// Create conversation with invited user
-fastify.route({
-  method: "POST",
-  url: "/invite-conversation",
-  onRequest: [fastify.authenticate],
-  schema: {
-    tags: ["messaging"],
-    description: "Create a conversation with an invited user",
-    summary: "Create invited user conversation",
-    body: {
-      type: "object",
-      properties: {
-        email: {
-          type: "string",
-          format: "email",
-          description: "Email of the user to invite"
-        },
-        initialMessage: {
-          type: "string",
-          description: "Initial message to send (optional)"
-        }
-      },
-      required: ["email"]
-    },
-    response: {
-      200: {
+  // Create conversation with invited user
+  fastify.route({
+    method: "POST",
+    url: "/invite-conversation",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["messaging"],
+      description: "Create a conversation with an invited user",
+      summary: "Create invited user conversation",
+      body: {
         type: "object",
         properties: {
-          success: { type: "boolean", example: true },
-          conversation: { type: "object" },
-          message: { type: "object", nullable: true },
-          user: { type: "object" }
+          userId: {
+            type: "number",
+            description: "id of the user inviting",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            description: "Email of the user to invite",
+          },
+          initialMessage: {
+            type: "string",
+            description: "Initial message to send (optional)",
+          },
+        },
+        required: ["email", "userId"],
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            conversation: { type: "object" },
+            message: { type: "object", nullable: true },
+            user: { type: "object" },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      try {
+        const { email, userId, initialMessage } = request.body as {
+          email: string;
+          userId: number;
+          initialMessage?: string;
+        };
+
+        // Get user by id and verify its auth0 id based on the sub then use that user much faster since its indexed by id
+        const user = await fastify.prisma.user.findUnique({
+          where: { id: userId },
+        });
+
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
+
+        // Log that we're about to invoke the service method
+        fastify.log.info({
+          action: "inviteUserAndCreateConversation",
+          user: user.id,
+          email,
+          hasInitialMessage: !!initialMessage,
+          hasEmailService: !!fastify.email,
+        });
+
+        // Use the service to handle all business logic
+        const result = await messagingService.inviteUserAndCreateConversation(
+          user.id,
+          email,
+          initialMessage,
+          fastify, // Pass fastify to the service method
+        );
+
+        // Note: The email sending is now handled in the service
+        // If we have a token and need to verify the email was sent
+        if (result.invitationToken) {
+          fastify.log.info({
+            message: "Route handler: Invitation created",
+            email,
+            tokenPrefix: result.invitationToken.substring(0, 8),
+          });
+        }
+
+        // Remove invitationToken from response
+        const { invitationToken, ...responseData } = result;
+
+        return {
+          success: true,
+          ...responseData,
+        };
+      } catch (err: any) {
+        fastify.log.error(err);
+        reply.code(500).send({
+          success: false,
+          error: err.message || "An unknown error occurred",
+        });
       }
     },
-    security: [{ bearerAuth: [] }]
-  },
-  handler: async (request, reply) => {
-    try {
-      // Get current user - still need this in the route handler to authenticate
-      const currentUser = await fastify.prisma.user.findUnique({
-        where: { auth0Id: request?.user?.sub }
-      });
-
-      if (!currentUser) {
-        return sendUnauthorized(reply, "User not found");
-      }
-
-      const { email, initialMessage } = request.body as {
-        email: string;
-        initialMessage?: string;
-      };
-
-      // Use the service to handle all business logic
-      const result = await messagingService.inviteUserAndCreateConversation(
-        currentUser.id,
-        email,
-        initialMessage
-      );
-
-      // If invitation token exists, send an email
-      if (result.invitationToken) {
-        try {
-          await fastify.email.sendInvitationEmail(
-            email,
-            result.invitationToken,
-            `${currentUser.firstName} ${currentUser.lastName}`
-          );
-          fastify.log.info(`Invitation email sent to ${email}`);
-        } catch (emailError) {
-          fastify.log.error("Failed to send invitation email:", emailError);
-          // Continue even if email fails
-        }
-      }
-
-      // Remove invitationToken from response
-      const { invitationToken, ...responseData } = result;
-
-      return {
-        success: true,
-        ...responseData
-      };
-    } catch (err: any) {
-      fastify.log.error(err);
-      reply.code(500).send({
-        success: false,
-        error: err.message || 'An unknown error occurred'
-      });
-    }
-  }
-});
-
+  });
 
   // Get all conversations for the current user
   fastify.route({
@@ -169,15 +190,20 @@ fastify.route({
       querystring: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user",
+          },
           limit: {
             type: "integer",
-            description: "Maximum number of conversations to return"
+            description: "Maximum number of conversations to return",
           },
           lastKey: {
             type: "string",
-            description: "Last evaluated key for pagination"
-          }
-        }
+            description: "Last evaluated key for pagination",
+          },
+        },
+        required: ["userId"],
       },
       response: {
         200: {
@@ -185,44 +211,48 @@ fastify.route({
           properties: {
             conversations: {
               type: "array",
-              items: { type: "object" }
+              items: { type: "object" },
             },
-            lastKey: { type: "string", nullable: true }
-          }
-        }
+            lastKey: { type: "string", nullable: true },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, limit, lastKey } = request.query as QueryParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
-
-        const { limit, lastKey } = request.query as QueryParams;
 
         const result = await messagingService.getConversationsForUser(
           user.id,
           limit ? parseInt(limit) : undefined,
-          lastKey ? JSON.parse(lastKey) : undefined
+          lastKey ? JSON.parse(lastKey) : undefined,
         );
 
         return {
           conversations: result.conversations,
-          lastKey: result.lastEvaluatedKey ? JSON.stringify(result.lastEvaluatedKey) : null
+          lastKey: result.lastEvaluatedKey
+            ? JSON.stringify(result.lastEvaluatedKey)
+            : null,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Create a new conversation
@@ -237,22 +267,26 @@ fastify.route({
       body: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user creating the conversation",
+          },
           participants: {
             type: "array",
             items: { type: "integer" },
-            description: "User IDs of participants"
+            description: "User IDs of participants",
           },
           type: {
             type: "string",
             enum: ["general"],
-            description: "Conversation type"
+            description: "Conversation type",
           },
           initialMessage: {
             type: "string",
-            description: "Initial message to send (optional)"
-          }
+            description: "Initial message to send (optional)",
+          },
         },
-        required: ["participants", "type"]
+        required: ["userId", "participants", "type"],
       },
       response: {
         200: {
@@ -260,23 +294,26 @@ fastify.route({
           properties: {
             success: { type: "boolean", example: true },
             conversation: { type: "object" },
-            message: { type: "object", nullable: true }
-          }
-        }
+            message: { type: "object", nullable: true },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, participants, initialMessage } =
+          request.body as CreateConversationBody;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
-
-        const { participants, initialMessage } = request.body as CreateConversationBody;
 
         const conversation = await messagingService.createConversation(
           user.id,
@@ -289,23 +326,23 @@ fastify.route({
           message = await messagingService.sendMessage(
             conversation.conversationId,
             user.id,
-            initialMessage
+            initialMessage,
           );
         }
 
         return {
           success: true,
           conversation,
-          message
+          message,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Get conversation by ID
@@ -322,64 +359,83 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user",
+          },
+        },
+        required: ["userId"],
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: { type: "object" }
-          }
+            conversation: { type: "object" },
+          },
         },
         404: {
           type: "object",
           properties: {
             success: { type: "boolean", example: false },
-            error: { type: "string", example: "Conversation not found" }
-          }
-        }
+            error: { type: "string", example: "Conversation not found" },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
-        const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
-        });
-
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
-        }
-
+        const { userId } = request.query as { userId: number };
         const { conversationId } = request.params as ConversationParams;
 
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        // Get user by id and verify its auth0 id matches
+        const user = await fastify.prisma.user.findUnique({
+          where: { id: userId },
+        });
+
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
+        }
+
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         // Check if user is a participant
         if (!conversation.participants.includes(user.id)) {
-          return sendForbidden(reply, "You don't have permission to access this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to access this conversation",
+          );
         }
 
         return {
           success: true,
-          conversation
+          conversation,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Get messages for a conversation
@@ -396,23 +452,28 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
       },
       querystring: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user",
+          },
           limit: {
             type: "integer",
-            description: "Maximum number of messages to return"
+            description: "Maximum number of messages to return",
           },
           lastKey: {
             type: "string",
-            description: "Last evaluated key for pagination"
-          }
-        }
+            description: "Last evaluated key for pagination",
+          },
+        },
+        required: ["userId"],
       },
       response: {
         200: {
@@ -420,59 +481,67 @@ fastify.route({
           properties: {
             messages: {
               type: "array",
-              items: { type: "object" }
+              items: { type: "object" },
             },
-            lastKey: { type: "string", nullable: true }
-          }
-        }
+            lastKey: { type: "string", nullable: true },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, limit, lastKey } = request.query as QueryParams;
+        const { conversationId } = request.params as ConversationParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        const { conversationId } = request.params as ConversationParams;
-        const { limit, lastKey } = request.query as QueryParams;
-
         // Verify the conversation exists and user is a participant
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         if (!conversation.participants.includes(user.id)) {
-          return sendForbidden(reply, "You don't have permission to access this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to access this conversation",
+          );
         }
 
         const result = await messagingService.getMessages(
           conversationId,
           user.id,
           limit ? parseInt(limit) : undefined,
-          lastKey ? JSON.parse(lastKey) : undefined
+          lastKey ? JSON.parse(lastKey) : undefined,
         );
-        console.log(result);
+
         return {
           messages: result.messages,
-          lastKey: result.lastEvaluatedKey ? JSON.stringify(result.lastEvaluatedKey) : null
-
+          lastKey: result.lastEvaluatedKey
+            ? JSON.stringify(result.lastEvaluatedKey)
+            : null,
         };
-
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Send a message in a conversation
@@ -489,74 +558,87 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
       },
       body: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user sending the message",
+          },
           text: {
             type: "string",
-            description: "Message text"
-          }
+            description: "Message text",
+          },
         },
-        required: ["text"]
+        required: ["userId", "text"],
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            message: { type: "object" }
-          }
-        }
+            message: { type: "object" },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, text } = request.body as SendMessageBody;
+        const { conversationId } = request.params as ConversationParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        const { conversationId } = request.params as ConversationParams;
-        const { text } = request.body as SendMessageBody;
-
         // Verify the conversation exists and user is a participant
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         if (!conversation.participants.includes(user.id)) {
-          return sendForbidden(reply, "You don't have permission to access this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to access this conversation",
+          );
         }
 
         const message = await messagingService.sendMessage(
           conversationId,
           user.id,
-          text
+          text,
+          fastify,
         );
 
         return {
           success: true,
-          message
+          message,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Mark messages as read
@@ -573,73 +655,85 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
       },
       body: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user marking messages as read",
+          },
           messageIds: {
             type: "array",
             items: { type: "string" },
-            description: "IDs of messages to mark as read"
-          }
+            description: "IDs of messages to mark as read",
+          },
         },
-        required: ["messageIds"]
+        required: ["userId", "messageIds"],
       },
       response: {
         200: {
           type: "object",
           properties: {
-            success: { type: "boolean", example: true }
-          }
-        }
+            success: { type: "boolean", example: true },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, messageIds } = request.body as MarkReadBody;
+        const { conversationId } = request.params as ConversationParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        const { conversationId } = request.params as ConversationParams;
-        const { messageIds } = request.body as MarkReadBody;
-
         // Verify the conversation exists and user is a participant
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         if (!conversation.participants.includes(user.id)) {
-          return sendForbidden(reply, "You don't have permission to access this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to access this conversation",
+          );
         }
 
         await messagingService.markMessagesAsRead(
           conversationId,
           user.id,
-          messageIds
+          messageIds,
         );
 
         return {
-          success: true
+          success: true,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Add a participant to a conversation
@@ -656,76 +750,92 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
       },
       body: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the requesting user",
+          },
           participantId: {
             type: "integer",
-            description: "User ID of participant to add"
-          }
+            description: "User ID of participant to add",
+          },
         },
-        required: ["participantId"]
+        required: ["userId", "participantId"],
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: { type: "object" }
-          }
-        }
+            conversation: { type: "object" },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId, participantId } = request.body as {
+          userId: number;
+          participantId: number;
+        };
+        const { conversationId } = request.params as ConversationParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        const { conversationId } = request.params as ConversationParams;
-        const { participantId } = request.body as { participantId: number };
-
         // Get conversation to verify user is a participant
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         // Check if user is a participant
         if (!conversation.participants.includes(user.id)) {
-          return sendForbidden(reply, "You don't have permission to modify this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to modify this conversation",
+          );
         }
 
         // Add the new participant
-        const updatedConversation = await messagingService.addParticipantToConversation(
-          conversationId,
-          participantId,
-          user.id,
-        );
+        const updatedConversation =
+          await messagingService.addParticipantToConversation(
+            conversationId,
+            participantId,
+            user.id,
+          );
 
         return {
           success: true,
-          conversation: updatedConversation
+          conversation: updatedConversation,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Remove a participant from a conversation
@@ -742,43 +852,60 @@ fastify.route({
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
+            description: "Conversation ID",
           },
           participantId: {
             type: "string",
-            description: "User ID of participant to remove"
-          }
+            description: "User ID of participant to remove",
+          },
         },
-        required: ["conversationId", "participantId"]
+        required: ["conversationId", "participantId"],
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the requesting user",
+          },
+        },
+        required: ["userId"],
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: { type: "object" }
-          }
-        }
+            conversation: { type: "object" },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
+        const { userId } = request.query as { userId: number };
+        const { conversationId, participantId } =
+          request.params as ParticipantParams;
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        const { conversationId, participantId } = request.params as ParticipantParams;
-
         // Get conversation to verify user is a participant
-        const conversation = await messagingService.getConversationById(conversationId, user.id);
+        const conversation = await messagingService.getConversationById(
+          conversationId,
+          user.id,
+        );
 
         if (!conversation) {
-          return sendNotFound(reply, 'Conversation not found');
+          return sendNotFound(reply, "Conversation not found");
         }
 
         // Only allow removal if:
@@ -787,28 +914,32 @@ fastify.route({
         const isRemovingSelf = user.id === parseInt(participantId);
 
         if (!conversation.participants.includes(user.id) && !isRemovingSelf) {
-          return sendForbidden(reply, "You don't have permission to modify this conversation");
+          return sendForbidden(
+            reply,
+            "You don't have permission to modify this conversation",
+          );
         }
 
         // Remove the participant
-        const updatedConversation = await messagingService.removeParticipantFromConversation(
-          conversationId,
-          parseInt(participantId),
-          user.id
-        );
+        const updatedConversation =
+          await messagingService.removeParticipantFromConversation(
+            conversationId,
+            parseInt(participantId),
+            user.id,
+          );
 
         return {
           success: true,
-          conversation: updatedConversation
+          conversation: updatedConversation,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Get unread conversation count for user
@@ -820,6 +951,16 @@ fastify.route({
       tags: ["messaging"],
       description: "Get count of unread messages for the current user",
       summary: "Get unread message count",
+      querystring: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user",
+          },
+        },
+        required: ["userId"],
+      },
       response: {
         200: {
           type: "object",
@@ -833,33 +974,39 @@ fastify.route({
                   conversationId: { type: "string" },
                   unreadCount: { type: "integer" },
                   lastMessageText: { type: "string" },
-                  lastMessageTime: { type: "string", format: "date-time" }
-                }
-              }
-            }
-          }
-        }
+                  lastMessageTime: { type: "string", format: "date-time" },
+                },
+              },
+            },
+          },
+        },
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
-        // Get user from auth token
+        const { userId } = request.query as { userId: number };
+
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
         // Get all conversations for user
-        const result = await messagingService.getConversationsForUser(user.id, 100);
+        const result = await messagingService.getConversationsForUser(
+          user.id,
+          100,
+        );
 
         // Count unread messages
         let totalUnread = 0;
 
-        result.conversations.forEach(conversation => {
+        result.conversations.forEach((conversation) => {
           const userIdStr = user.id.toString();
           if (conversation.unreadCount && conversation.unreadCount[userIdStr]) {
             totalUnread += conversation.unreadCount[userIdStr];
@@ -869,25 +1016,25 @@ fastify.route({
         return {
           unreadCount: totalUnread,
           conversationsWithUnread: result.conversations
-            .filter(conv => {
+            .filter((conv) => {
               const userIdStr = user.id.toString();
               return conv.unreadCount && conv.unreadCount[userIdStr] > 0;
             })
-            .map(conv => ({
+            .map((conv) => ({
               conversationId: conv.conversationId,
               unreadCount: conv.unreadCount[user.id.toString()] || 0,
               lastMessageText: conv.lastMessageText,
-              lastMessageTime: conv.lastMessageTime
-            }))
+              lastMessageTime: conv.lastMessageTime,
+            })),
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || 'An unknown error occurred'
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 }
 

@@ -1,22 +1,42 @@
 // src/services/email/index.ts";
 
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses"
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 export class EmailService {
   private readonly sesClient: SESClient;
   private readonly defaultFromAddress: string;
   private readonly defaultReplyToAddress: string;
   private readonly appUrl: string;
 
-  constructor(options: {
-    region?: string;
-    fromAddress?: string;
-    replyToAddress?: string;
-    appUrl?: string;
-  } = {}) {
-    const region = options.region || process.env.SES_REGION || 'us-east-1';
-    this.defaultFromAddress = options.fromAddress || process.env.SES_FROM_ADDRESS || 'no-reply@example.com';
-    this.defaultReplyToAddress = options.replyToAddress || process.env.SES_REPLY_TO_ADDRESS || this.defaultFromAddress;
-    this.appUrl = options.appUrl || process.env.APP_URL || 'https://app.stagely.com';
+  constructor(
+    options: {
+      region?: string;
+      fromAddress?: string;
+      replyToAddress?: string;
+      appUrl?: string;
+    } = {},
+  ) {
+    const region = options.region || process.env.SES_REGION || "us-east-1";
+    this.defaultFromAddress =
+      options.fromAddress ||
+      process.env.SES_FROM_ADDRESS ||
+      "no-reply@example.com";
+    this.defaultReplyToAddress =
+      options.replyToAddress ||
+      process.env.SES_REPLY_TO_ADDRESS ||
+      this.defaultFromAddress;
+    this.appUrl =
+      options.appUrl || process.env.APP_URL || "https://app.stagely.com";
+
+    // Log email configuration
+    console.log("EMAIL SERVICE CONFIG:", {
+      region,
+      fromAddress: this.defaultFromAddress,
+      replyToAddress: this.defaultReplyToAddress,
+      appUrl: this.appUrl,
+      sesRegionEnvVar: !!process.env.SES_REGION,
+      fromAddressEnvVar: !!process.env.SES_FROM_ADDRESS,
+      environment: process.env.NODE_ENV,
+    });
 
     this.sesClient = new SESClient({ region });
   }
@@ -28,16 +48,28 @@ export class EmailService {
    * @param inviterName The name of the person who sent the invitation
    * @returns The message ID
    */
-  async sendInvitationEmail(email: string, token: string, inviterName?: string): Promise<string> {
+  async sendInvitationEmail(
+    email: string,
+    token: string,
+    inviterName?: string,
+  ): Promise<string> {
+    // Log email sending request
+    console.log("EMAIL SENDING REQUESTED:", {
+      to: email,
+      type: "invitation",
+      inviterName: inviterName || "unknown",
+      environment: process.env.NODE_ENV,
+      hasToken: !!token,
+    });
     const params = {
       Source: this.defaultFromAddress,
       Destination: {
-        ToAddresses: [email]
+        ToAddresses: [email],
       },
       Message: {
         Subject: {
-          Data: `${inviterName || 'Someone'} invited you to Stagely`,
-          Charset: 'UTF-8'
+          Data: `${inviterName || "Someone"} invited you to Stagely`,
+          Charset: "UTF-8",
         },
         Body: {
           Html: {
@@ -47,7 +79,7 @@ export class EmailService {
                   <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
                     <h2 style="color: #042C44;">You've been invited to Stagely</h2>
                     <p>Hello,</p>
-                    <p>You've been invited to join Stagely by ${inviterName || 'someone'}.</p>
+                    <p>You've been invited to join Stagely by ${inviterName || "someone"}.</p>
                     <p>Stagely is a platform for managing properties and maintenance efficiently.</p>
                     <p style="margin: 30px 0;">
 
@@ -65,13 +97,13 @@ export class EmailService {
                 </body>
               </html>
             `,
-            Charset: 'UTF-8'
+            Charset: "UTF-8",
           },
           Text: {
             Data: `
               Hello,
 
-              You've been invited to join Stagely by ${inviterName || 'someone'}.
+              You've been invited to join Stagely by ${inviterName || "someone"}.
 
               Stagely is a platform for managing properties and maintenance efficiently.
 
@@ -85,19 +117,38 @@ export class EmailService {
               Best regards,
               The Stagely Team
             `,
-            Charset: 'UTF-8'
-          }
-        }
+            Charset: "UTF-8",
+          },
+        },
       },
-      ReplyToAddresses: [this.defaultReplyToAddress]
+      ReplyToAddresses: [this.defaultReplyToAddress],
     };
 
     try {
+      console.log("ATTEMPTING TO SEND EMAIL VIA SES:", {
+        to: email,
+        subject: `${inviterName || "Someone"} invited you to Stagely`,
+        sesConfigured: !!this.sesClient,
+        region: this.sesClient.config.region,
+      });
+
       const command = new SendEmailCommand(params);
       const response = await this.sesClient.send(command);
-      return response.MessageId || '';
-    } catch (error) {
-      console.error('Error sending invitation email:', error);
+
+      console.log("EMAIL SENT SUCCESSFULLY:", {
+        messageId: response.MessageId,
+        recipient: email,
+      });
+
+      return response.MessageId || "";
+    } catch (error: any) {
+      console.error("EMAIL SENDING FAILED:", {
+        error: error.message,
+        code: error.code,
+        name: error.name,
+        statusCode: error.$metadata?.httpStatusCode,
+        recipient: email,
+      });
       throw error;
     }
   }
