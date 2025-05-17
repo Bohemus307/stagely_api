@@ -240,6 +240,7 @@ model Incident {
   spaceType       SpaceType?       @map("space_type") // Added to align with PropertySpace
   featureVector   Json?            @map("feature_vector") // For AI similarity calculations
   aiClassified    Boolean          @default(false) @map("ai_classified")
+  labeledImageUrl String?          @map("labeled_image_url") // bounding box classification result
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime         @default(now()) @map("updated_at") @db.Timestamptz()
   
