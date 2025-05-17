@@ -1,4 +1,3 @@
-// src/plugins/dynamoDB.ts
 import fp from "fastify-plugin";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
@@ -22,9 +21,12 @@ interface DynamoDBPluginOptions {
  * @param {FastifyInstance} fastify - The Fastify instance
  * @param {DynamoDBPluginOptions} options - Plugin options
  */
-async function dynamoDBPlugin(fastify: any, options: DynamoDBPluginOptions = {}) {
+async function dynamoDBPlugin(
+  fastify: any,
+  options: DynamoDBPluginOptions = {},
+) {
   // Set default region if not provided
-  const region = options.region || process.env.AWS_REGION || 'us-east-1';
+  const region = options.region || process.env.AWS_REGION || "us-east-1";
 
   // Create client config
   const clientConfig: any = { region };
@@ -34,9 +36,19 @@ async function dynamoDBPlugin(fastify: any, options: DynamoDBPluginOptions = {})
     clientConfig.endpoint = options.endpoint;
   }
 
-  // Add credentials if provided
-  if (options.credentials) {
-    clientConfig.credentials = options.credentials;
+  // If you need different endpoints for local development:
+  if (process.env.NODE_ENV === "development") {
+    clientConfig.endpoint = "http://localhost:8000";
+  }
+
+  if (process.env.ACCESS_KEY && process.env.SECRET_ACCESS_KEY) {
+    clientConfig.credentials = {
+      accessKeyId: process.env.ACCESS_KEY,
+      secretAccessKey: process.env.SECRET_ACCESS_KEY,
+    };
+    console.log("Using explicit credentials from environment variables");
+  } else {
+    console.log("WARNING: No AWS credentials found in environment variables");
   }
 
   // Create the DynamoDB client
@@ -64,7 +76,7 @@ async function dynamoDBPlugin(fastify: any, options: DynamoDBPluginOptions = {})
   // Decorate the Fastify instance with both clients
   fastify.decorate("dynamoDB", {
     client: ddbClient,
-    documentClient: documentClient
+    documentClient: documentClient,
   });
 }
 

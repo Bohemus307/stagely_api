@@ -145,44 +145,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
     },
   });
 
-  // GET /users/me
-  // fastify.route({
-  //   method: "GET",
-  //   url: "/me",
-  //   onRequest: [fastify.authenticate], // Use array syntax and onRequest
-  //   schema: {
-  //     tags: ["users"],
-  //     description: "Get current user profile",
-  //     summary: "Get current user",
-  //     response: {
-  //       200: userSchemas.userResponseSchema,
-  //     },
-  //     security: [
-  //       {
-  //         bearerAuth: [],
-  //       },
-  //     ],
-  //   },
-  //   handler: async (request, reply) => {
-  //     // Use the correct method name from your service
-  //     const authId = request.user.sub;
-
-  //     try {
-  //       // Changed from getUserByAuthId to getUserByAuth0Id to match your service
-  //       const user = await userService.getUserByAuth0Id(authId);
-  //       if (!user) {
-  //         return sendNotFound(reply, "User not found");
-  //       }
-  //       return user;
-  //     } catch (err) {
-  //       if (err instanceof NotFoundError) {
-  //         return sendNotFound(reply, "User not found");
-  //       }
-  //       throw err;
-  //     }
-  //   },
-  // });
-
   // POST /users
   fastify.route({
     method: "POST",

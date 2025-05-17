@@ -296,6 +296,21 @@ export class UserRepository {
   }
 
   /**
+ * Get multiple users by their IDs
+ * @param ids - Array of user IDs to retrieve
+ * @returns Array of found users
+ */
+async getUsersByIds(ids: number[]): Promise<User[]> {
+  if (!ids.length) return [];
+
+  return this.prisma.user.findMany({
+    where: {
+      id: { in: ids }
+    }
+  });
+}
+
+  /**
    * Check if email exists for another user
    */
   async isEmailTaken(email: string, excludeUserId?: number): Promise<boolean> {
@@ -339,4 +354,71 @@ export class UserRepository {
       take: limit,
     });
   }
+
+
+
+/**
+ * Find an active user by email
+ */
+async findActiveUserByEmail(email: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      email,
+      isPlaceholder: false
+    }
+  });
+}
+
+/**
+ * Find a valid invitation (placeholder user) by email
+ */
+async findValidInvitationByEmail(email: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      email,
+      isPlaceholder: true,
+      expiresAt: {
+        gt: new Date()
+      }
+    }
+  });
+}
+
+/**
+ * Find a placeholder user by invitation token
+ */
+async findByInvitationToken(token: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      invitationToken: token,
+      isPlaceholder: true,
+      expiresAt: {
+        gt: new Date()
+      }
+    }
+  });
+}
+
+/**
+ * Create a placeholder user for invitation
+ */
+async createPlaceholderUser(params: {
+  email: string;
+  invitationToken: string;
+  invitedById: number;
+  expiresAt: Date;
+}): Promise<User> {
+  return this.prisma.user.create({
+    data: {
+      email: params.email,
+      firstName: "Invited",
+      lastName: "User",
+      auth0Id: `placeholder-${params.invitationToken}`,
+      isPlaceholder: true,
+      invitationToken: params.invitationToken,
+      invitedById: params.invitedById,
+      expiresAt: params.expiresAt
+    }
+  });
+}
 }
