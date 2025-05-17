@@ -7,7 +7,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Enums 
+// Enums
 enum PropertyStatus {
   Active
   Maintenance
@@ -52,8 +52,21 @@ model User {
   lastLogin         DateTime?   @map("last_login") @db.Timestamptz()
   createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt         DateTime    @default(now()) @map("updated_at") @db.Timestamptz()
+
+  // New fields for invitation system
+  isPlaceholder     Boolean     @default(false) @map("is_placeholder")
+  invitationToken   String?     @unique @map("invitation_token")
+  invitedById       Int?        @map("invited_by_id")
+  expiresAt         DateTime?   @map("expires_at") @db.Timestamptz()
+
+  // Self-relation for invited users
+  invitedBy         User?       @relation("UserInvitations", fields: [invitedById], references: [id])
+  invitedUsers      User[]      @relation("UserInvitations")
+
   properties        Property[]
 
+  @@index([isPlaceholder])
+  @@index([invitationToken])
   @@map("users")
 }
 
@@ -73,7 +86,7 @@ model Property {
   lastIncidentAt    DateTime?      @map("last_incident_at") @db.Timestamptz()
   createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt         DateTime       @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   inspections       Inspection[]
@@ -95,7 +108,7 @@ model Inspection {
   inspectionDate  DateTime    @map("inspection_date") @db.Timestamptz()
   createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime    @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   property        Property    @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   photos          PropertyImage[]
@@ -115,7 +128,7 @@ model PropertySpace {
   confidenceScore  Decimal?       @db.Decimal(5, 4) @map("confidence_score")
   createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt        DateTime       @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   property         Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   images           PropertyImage[]
@@ -133,7 +146,7 @@ model SpaceObjectLabel {
   confidence     Decimal      @db.Decimal(5, 4) @map("confidence_score")
   category       String?      // Optional category for grouping (e.g., "Furniture", "Appliance")
   createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz()
-  
+
   // Relations
   space          PropertySpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
@@ -146,8 +159,8 @@ model SpaceObjectLabel {
 model PropertyImage {
   id              Int             @id @default(autoincrement()) @map("image_id")
   inspectionId    Int?            @map("inspection_id")
-  spaceId         Int?            @map("space_id") 
-  incidentId      Int?            @map("incident_id") 
+  spaceId         Int?            @map("space_id")
+  incidentId      Int?            @map("incident_id")
   imageUrl        String          @map("image_url")
   caption         String?
   takenAt         DateTime        @map("taken_at") @db.Timestamptz()
@@ -155,7 +168,7 @@ model PropertyImage {
   featureVector   Json?           @map("feature_vector") // For AI image comparison
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime        @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   inspection      Inspection?     @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
   space           PropertySpace?  @relation(fields: [spaceId], references: [id])
@@ -163,11 +176,11 @@ model PropertyImage {
   similarImages   ImageSimilarity[] @relation("BaseImage")
   comparedTo      ImageSimilarity[] @relation("ComparedImage")
   detectedChanges ImageChange[]
-  objectLabels    ImageObjectLabel[] 
+  objectLabels    ImageObjectLabel[]
 
   @@index([inspectionId])
   @@index([spaceId])
-  @@index([incidentId]) 
+  @@index([incidentId])
   @@index([takenAt])
   @@map("property_images")
 }
@@ -178,7 +191,7 @@ model ImageSimilarity {
   comparedImageId   Int           @map("compared_image_id")
   similarityScore   Decimal       @db.Decimal(5, 4) @map("similarity_score")
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  
+
   // Relations
   baseImage         PropertyImage @relation("BaseImage", fields: [baseImageId], references: [id], onDelete: Cascade)
   comparedImage     PropertyImage @relation("ComparedImage", fields: [comparedImageId], references: [id], onDelete: Cascade)
@@ -200,7 +213,7 @@ model ImageChange {
   verified        Boolean       @default(false)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   image           PropertyImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
@@ -218,7 +231,7 @@ model ImageObjectLabel {
   category       String?       // Optional category for grouping
   boundingBox    Json?         @map("bounding_box") // Box coordinates of the object
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz()
-  
+
   // Relations
   image          PropertyImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
@@ -243,7 +256,7 @@ model Incident {
   labeledImageUrl String?          @map("labeled_image_url") // bounding box classification result
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt       DateTime         @default(now()) @map("updated_at") @db.Timestamptz()
-  
+
   // Relations
   property        Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   images          PropertyImage[]  // CHANGED: Using PropertyImage instead of separate IncidentImage
@@ -266,7 +279,7 @@ model IncidentObjectLabel {
   confidence     Decimal     @db.Decimal(5, 4) @map("confidence_score")
   category       String?     // Optional category for grouping (e.g., "Plumbing", "Structural")
   createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz()
-  
+
   // Relations
   incident       Incident    @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 

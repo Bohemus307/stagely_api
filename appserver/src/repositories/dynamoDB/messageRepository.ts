@@ -6,9 +6,9 @@ import {
   UpdateCommand,
   DeleteCommand,
   BatchWriteCommand,
-  BatchGetCommand
+  BatchGetCommand,
 } from "@aws-sdk/lib-dynamodb";
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from "uuid";
 import { TableNames } from "../../config/dynamoTables";
 import { ReturnValue } from "@aws-sdk/client-dynamodb";
 
@@ -25,7 +25,7 @@ export class DynamoDBMessageRepository {
   private readonly tableName: string;
   private readonly documentClient: any;
 
-  constructor(documentClient: any, deploymentEnv: string = process.env.NODE_ENV || 'development') {
+  constructor(documentClient: any, deploymentEnv: string = "staging") {
     this.documentClient = documentClient;
     // Append environment to table name
     this.tableName = `${TableNames.MESSAGES}-${deploymentEnv}`;
@@ -54,8 +54,9 @@ export class DynamoDBMessageRepository {
 
     // Initialize message status for all participants
     const status: Record<string, string> = {};
-    participants.forEach(participantId => {
-      status[participantId.toString()] = participantId === senderId ? 'READ' : 'SENT';
+    participants.forEach((participantId) => {
+      status[participantId.toString()] =
+        participantId === senderId ? "READ" : "SENT";
     });
 
     const message: DynamoDBMessage = {
@@ -69,7 +70,7 @@ export class DynamoDBMessageRepository {
 
     const params = {
       TableName: this.tableName,
-      Item: message
+      Item: message,
     };
 
     await this.documentClient.send(new PutCommand(params));
@@ -79,17 +80,20 @@ export class DynamoDBMessageRepository {
   /**
    * Get a message by ID
    */
-  async getMessageById(messageId: string, conversationId: string): Promise<DynamoDBMessage | null> {
+  async getMessageById(
+    messageId: string,
+    conversationId: string,
+  ): Promise<DynamoDBMessage | null> {
     const params = {
       TableName: this.tableName,
       Key: {
         messageId,
-        conversationId
-      }
+        conversationId,
+      },
     };
 
     const result = await this.documentClient.send(new GetCommand(params));
-    return result.Item as DynamoDBMessage || null;
+    return (result.Item as DynamoDBMessage) || null;
   }
 
   /**
@@ -98,28 +102,28 @@ export class DynamoDBMessageRepository {
   async getMessagesForConversation(
     conversationId: string,
     limit: number = 20,
-    lastEvaluatedKey?: any
+    lastEvaluatedKey?: any,
   ): Promise<{
     messages: DynamoDBMessage[];
     lastEvaluatedKey?: any;
   }> {
     const params = {
       TableName: this.tableName,
-      IndexName: 'conversationId-timestamp-index',
-      KeyConditionExpression: 'conversationId = :conversationId',
+      IndexName: "conversationId-timestamp-index",
+      KeyConditionExpression: "conversationId = :conversationId",
       ExpressionAttributeValues: {
-        ':conversationId': conversationId
+        ":conversationId": conversationId,
       },
       ScanIndexForward: false, // Most recent first
       Limit: limit,
-      ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey })
+      ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
     };
 
     const result = await this.documentClient.send(new QueryCommand(params));
 
     return {
       messages: (result.Items || []) as DynamoDBMessage[],
-      lastEvaluatedKey: result.LastEvaluatedKey
+      lastEvaluatedKey: result.LastEvaluatedKey,
     };
   }
 
@@ -130,7 +134,7 @@ export class DynamoDBMessageRepository {
     messageId: string,
     conversationId: string,
     userId: number,
-    status: 'SENT' | 'DELIVERED' | 'READ'
+    status: "SENT" | "DELIVERED" | "READ",
   ): Promise<DynamoDBMessage> {
     const userIdStr = userId.toString();
 
@@ -138,17 +142,17 @@ export class DynamoDBMessageRepository {
       TableName: this.tableName,
       Key: {
         messageId,
-        conversationId
+        conversationId,
       },
       UpdateExpression: `set #status.#userId = :status`,
       ExpressionAttributeNames: {
-        '#status': 'status',
-        '#userId': userIdStr
+        "#status": "status",
+        "#userId": userIdStr,
       },
       ExpressionAttributeValues: {
-        ':status': status
+        ":status": status,
       },
-      ReturnValues: ReturnValue.ALL_NEW
+      ReturnValues: ReturnValue.ALL_NEW,
     };
 
     const result = await this.documentClient.send(new UpdateCommand(params));
@@ -159,9 +163,9 @@ export class DynamoDBMessageRepository {
    * Update message status for multiple messages
    */
   async batchUpdateMessageStatus(
-    messageInfos: Array<{ messageId: string, conversationId: string }>,
+    messageInfos: Array<{ messageId: string; conversationId: string }>,
     userId: number,
-    status: 'SENT' | 'DELIVERED' | 'READ'
+    status: "SENT" | "DELIVERED" | "READ",
   ): Promise<void> {
     const userIdStr = userId.toString();
     const batchSize = 25;
@@ -173,44 +177,56 @@ export class DynamoDBMessageRepository {
       const batchGetParams = {
         RequestItems: {
           [this.tableName]: {
-            Keys: batch.map(info => ({
+            Keys: batch.map((info) => ({
               messageId: info.messageId,
-              conversationId: info.conversationId
-            }))
-          }
-        }
+              conversationId: info.conversationId,
+            })),
+          },
+        },
       };
 
-      const batchGetResult = await this.documentClient.send(new BatchGetCommand(batchGetParams));
+      const batchGetResult = await this.documentClient.send(
+        new BatchGetCommand(batchGetParams),
+      );
       const messages = batchGetResult.Responses?.[this.tableName] || [];
 
       // Update status and prepare BatchWriteItem
-      const updates = messages.map((message: { status: { [x: string]: string; }; }) => {
-        message.status[userIdStr] = status;
-        return {
-          PutRequest: {
-            Item: message
-          }
-        };
-      });
+      const updates = messages.map(
+        (message: { status: { [x: string]: string } }) => {
+          message.status[userIdStr] = status;
+          return {
+            PutRequest: {
+              Item: message,
+            },
+          };
+        },
+      );
 
       if (updates.length > 0) {
         const params = {
           RequestItems: {
-            [this.tableName]: updates
-          }
+            [this.tableName]: updates,
+          },
         };
 
         try {
-          const result = await this.documentClient.send(new BatchWriteCommand(params));
+          const result = await this.documentClient.send(
+            new BatchWriteCommand(params),
+          );
 
           // Handle unprocessed items
-          if (result.UnprocessedItems && Object.keys(result.UnprocessedItems).length > 0) {
+          if (
+            result.UnprocessedItems &&
+            Object.keys(result.UnprocessedItems).length > 0
+          ) {
             // Implement retry logic here if needed
-            console.warn('Unprocessed items in batch write:', result.UnprocessedItems);
+            console.warn(
+              "Unprocessed items in batch write:",
+              result.UnprocessedItems,
+            );
           }
         } catch (error) {
-          console.error('Error in batch update:', error);
+          console.error("Error in batch update:", error);
           throw error;
         }
       }
@@ -220,13 +236,16 @@ export class DynamoDBMessageRepository {
   /**
    * Delete a message
    */
-  async deleteMessage(messageId: string, conversationId: string): Promise<void> {
+  async deleteMessage(
+    messageId: string,
+    conversationId: string,
+  ): Promise<void> {
     const params = {
       TableName: this.tableName,
       Key: {
         messageId,
-        conversationId
-      }
+        conversationId,
+      },
     };
 
     await this.documentClient.send(new DeleteCommand(params));
