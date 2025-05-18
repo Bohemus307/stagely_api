@@ -908,7 +908,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const { propertyId } = request.query as { propertyId?: string };
       const parsedPropertyId = propertyId ? parseInt(propertyId) : undefined;
-
+      let propertyIds;
       // Get user from auth token
       const user = await fastify.prisma.user.findUnique({
         where: { auth0Id: request?.user?.sub },
@@ -939,7 +939,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           select: { id: true },
         });
 
-        const propertyIds = userProperties.map((p) => p.id);
+        propertyIds = userProperties.map((p) => p.id);
 
         // If user has no properties, return empty stats
         if (propertyIds.length === 0) {
@@ -952,10 +952,13 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           };
         }
 
-        // The repository now supports filtering by multiple property IDs
+        // Pass the user's propertyIds to the service
       }
 
-      const stats = await incidentService.getIncidentStats(parsedPropertyId);
+      const stats = await incidentService.getIncidentStats(
+        parsedPropertyId,
+        !parsedPropertyId ? propertyIds : undefined,
+      );
       return stats;
     },
   });

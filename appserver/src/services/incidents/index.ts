@@ -301,8 +301,11 @@ export class IncidentService {
   /**
    * Get incident statistics
    */
-  async getIncidentStats(propertyId?: number): Promise<IncidentStats> {
-    return this.incidentRepo.getIncidentStats(propertyId);
+  async getIncidentStats(
+    propertyId?: number,
+    propertyIds?: number[],
+  ): Promise<IncidentStats> {
+    return this.incidentRepo.getIncidentStats(propertyId, propertyIds);
   }
 
   /**

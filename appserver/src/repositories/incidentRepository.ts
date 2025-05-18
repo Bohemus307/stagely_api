@@ -14,6 +14,7 @@ export interface IncidentQueryParams {
   page?: number;
   limit?: number;
   propertyId?: number;
+  propertyIds?: number[];
   status?: IncidentStatus;
   severity?: IncidentSeverity;
   incidentType?: string;
@@ -93,6 +94,7 @@ export class IncidentRepository {
     page = 1,
     limit = 10,
     propertyId,
+    propertyIds,
     status,
     severity,
     incidentType,
@@ -105,7 +107,11 @@ export class IncidentRepository {
 
     // Build where conditions
     const where: any = {};
-    if (propertyId) where.propertyId = propertyId;
+    if (propertyId) {
+      where.propertyId = propertyId;
+    } else if (propertyIds && propertyIds.length > 0) {
+      where.propertyId = { in: propertyIds };
+    }
     if (status) where.status = status;
     if (severity) where.severity = severity;
     if (incidentType) where.incidentType = incidentType;
@@ -418,8 +424,17 @@ export class IncidentRepository {
   /**
    * Get incident statistics
    */
-  async getIncidentStats(propertyId?: number): Promise<IncidentStats> {
-    const where: any = propertyId ? { propertyId } : {};
+  async getIncidentStats(
+    propertyId?: number,
+    propertyIds?: number[],
+  ): Promise<IncidentStats> {
+    let where: any = {};
+
+    if (propertyId) {
+      where.propertyId = propertyId;
+    } else if (propertyIds && propertyIds.length > 0) {
+      where.propertyId = { in: propertyIds };
+    }
 
     // Get all possible status values directly from the enum
     const statuses = Object.values(IncidentStatus);
