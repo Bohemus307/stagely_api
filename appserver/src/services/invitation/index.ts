@@ -6,14 +6,22 @@ import { User } from "@prisma/client";
 export class InvitationService {
   private userRepository: UserRepository;
   private emailSender: {
-    sendInvitationEmail: (email: string, token: string, inviterName: string) => Promise<string>
+    sendInvitationEmail: (
+      email: string,
+      token: string,
+      inviterName: string,
+    ) => Promise<string>;
   };
 
   constructor(
     userRepository: UserRepository,
     emailSender: {
-      sendInvitationEmail: (email: string, token: string, inviterName: string) => Promise<string>
-    }
+      sendInvitationEmail: (
+        email: string,
+        token: string,
+        inviterName: string,
+      ) => Promise<string>;
+    },
   ) {
     this.userRepository = userRepository;
     this.emailSender = emailSender;
@@ -25,13 +33,17 @@ export class InvitationService {
    * @param inviterId ID of the user sending the invitation
    * @param inviterName Name of the inviter for the email
    */
-  async inviteUser(email: string, inviterId: number, inviterName: string): Promise<{
+  async inviteUser(
+    email: string,
+    inviterId: number,
+    inviterName: string,
+  ): Promise<{
     user: {
       id: number;
       email: string;
       isPlaceholder: boolean;
-    },
-    isNewInvitation: boolean
+    };
+    isNewInvitation: boolean;
   }> {
     // Check if user already exists
     let user = await this.userRepository.findActiveUserByEmail(email);
@@ -42,9 +54,9 @@ export class InvitationService {
         user: {
           id: user.id,
           email: user.email,
-          isPlaceholder: false
+          isPlaceholder: false,
         },
-        isNewInvitation: false
+        isNewInvitation: false,
       };
     }
 
@@ -57,9 +69,9 @@ export class InvitationService {
         user: {
           id: user.id,
           email: user.email,
-          isPlaceholder: true
+          isPlaceholder: true,
         },
-        isNewInvitation: false
+        isNewInvitation: false,
       };
     }
 
@@ -72,7 +84,7 @@ export class InvitationService {
       email,
       invitationToken,
       invitedById: inviterId,
-      expiresAt
+      expiresAt,
     });
 
     // Send invitation email
@@ -80,7 +92,7 @@ export class InvitationService {
       await this.emailSender.sendInvitationEmail(
         email,
         invitationToken,
-        inviterName
+        inviterName,
       );
     } catch (error) {
       console.error("Failed to send invitation email:", error);
@@ -91,9 +103,9 @@ export class InvitationService {
       user: {
         id: newUser.id,
         email: newUser.email,
-        isPlaceholder: true
+        isPlaceholder: true,
       },
-      isNewInvitation: true
+      isNewInvitation: true,
     };
   }
 
@@ -104,7 +116,8 @@ export class InvitationService {
    */
   async acceptInvitation(token: string, currentUser: User): Promise<boolean> {
     // Find the placeholder user by token
-    const placeholderUser = await this.userRepository.findByInvitationToken(token);
+    const placeholderUser =
+      await this.userRepository.findByInvitationToken(token);
 
     if (!placeholderUser) {
       return false;
@@ -117,7 +130,7 @@ export class InvitationService {
       profilePictureUrl: currentUser.profilePictureUrl,
       isPlaceholder: false,
       invitationToken: null,
-      expiresAt: null
+      expiresAt: null,
     });
 
     // Delete the current user since we're transferring identity
@@ -137,11 +150,78 @@ export class InvitationService {
     valid: boolean;
     email: string | null;
   }> {
-    const placeholderUser = await this.userRepository.findByInvitationToken(token);
+    const placeholderUser =
+      await this.userRepository.findByInvitationToken(token);
 
     return {
       valid: !!placeholderUser,
-      email: placeholderUser?.email || null
+      email: placeholderUser?.email || null,
+    };
+  }
+
+  /**
+   * Resend an invitation email to a user
+   * @param email Email address to resend invitation to
+   * @param inviterName Name of the inviter for the email
+   */
+  async resendInvitation(
+    email: string,
+    inviterName: string,
+  ): Promise<{
+    success: boolean;
+    user: {
+      id: number;
+      email: string;
+      isPlaceholder: boolean;
+    } | null;
+  }> {
+    // Check for existing invitation
+    const user = await this.userRepository.findValidInvitationByEmail(email);
+
+    if (!user) {
+      // No valid invitation found
+      return {
+        success: false,
+        user: null,
+      };
+    }
+
+    // Use existing token or generate a new one if expired
+    let invitationToken = user.invitationToken;
+    let expiresAt = user.expiresAt;
+
+    // If token is expired or null, generate a new one
+    if (!invitationToken || !expiresAt || expiresAt <= new Date()) {
+      invitationToken = uuidv4();
+      expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
+
+      // Update the user with the new token
+      await this.userRepository.updateUser(user.id, {
+        invitationToken,
+        expiresAt,
+      });
+    }
+
+    // Resend invitation email
+    try {
+      await this.emailSender.sendInvitationEmail(
+        email,
+        invitationToken,
+        inviterName,
+      );
+    } catch (error) {
+      console.error("Failed to send invitation email:", error);
+      // Continue even if email sending fails
+    }
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        isPlaceholder: true,
+      },
     };
   }
 }
