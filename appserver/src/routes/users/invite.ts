@@ -208,7 +208,88 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
       }
     }
   });
+
+  // DELETE invitation - for testing purposes only
+  fastify.route({
+    method: "DELETE",
+    url: "/invitation",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["users"],
+      description: "Delete an invitation (for testing purposes only)",
+      summary: "Delete invitation",
+      querystring: {
+        type: "object",
+        properties: {
+          email: {
+            type: "string",
+            format: "email",
+            description: "Email address of the invitation to delete"
+          },
+          
+        },
+        // Make one of them required
+        oneOf: [
+          { required: ["email"] }
+        ]
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            message: { type: "string" }
+          }
+        },
+        404: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: false },
+            error: { type: "string", example: "Invitation not found" }
+          }
+        }
+      },
+      security: [{ bearerAuth: [] }]
+    },
+    handler: async (request, reply) => {
+      try {
+        // The fastify.authenticate middleware ensures we have a user object
+        const user = request.user as AuthUser | undefined;
+        if (!user?.sub) {
+          return sendUnauthorized(reply, "Invalid authentication token");
+        }
+
+        const currentUser = await userRepository.getUserByAuth0Id(user.sub);
+        if (!currentUser) {
+          return sendUnauthorized(reply, "User not found");
+        }
+
+
+        const { email, token } = request.query as { email?: string, token?: string };
+
+        // Call the service method to delete the invitation
+        const deleted = await invitationService.deleteInvitation({ email, token });
+
+        if (!deleted) {
+          return sendNotFound(reply, "Invitation not found");
+        }
+
+        return {
+          success: true,
+          message: "Invitation deleted successfully"
+        };
+      } catch (err: any) {
+        fastify.log.error(err);
+
+        reply.code(500).send({
+          success: false,
+          error: err.message || "Failed to delete invitation"
+        });
+      }
+    }
+  });
 }
+
 
 export default inviteRoutes;
 
