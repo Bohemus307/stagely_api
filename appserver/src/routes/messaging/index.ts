@@ -53,7 +53,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.dynamoDB.documentClient
   );
 
-  // Create a new conversation
+  // Create conversation and invite user
   fastify.route({
     method: "POST",
     url: "/conversations",

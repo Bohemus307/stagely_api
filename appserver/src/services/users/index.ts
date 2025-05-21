@@ -43,11 +43,31 @@ export class UserService {
   }
 
   /**
-   * Create a new user
+   * Create a new user or accept an invitation if one exists
    */
   async createUser(
     data: Omit<User, "id" | "createdAt" | "updatedAt">,
   ): Promise<User> {
+    // Check if there's an existing invitation for this email
+    const existingInvitation = await this.repository.findValidInvitationByEmail(
+      data.email,
+    );
+
+    if (existingInvitation) {
+      // Update the existing invitation instead of creating a new user
+      return this.repository.updateUser(existingInvitation.id, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        profilePictureUrl: data.profilePictureUrl,
+        isPlaceholder: false,
+        invitationToken: null,
+        expiresAt: null,
+        // Copy any other relevant fields from data that should be updated
+      });
+    }
+
+    // No invitation exists, proceed with normal user creation
+
     // Check if email is already taken
     const emailExists = await this.repository.isEmailTaken(data.email);
     if (emailExists) {
