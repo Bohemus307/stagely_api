@@ -224,4 +224,41 @@ export class InvitationService {
       },
     };
   }
+
+  /**
+   * Delete an invitation (for testing purposes only)
+   * @param params Object containing either email or token
+   * @returns boolean indicating if deletion was successful
+   */
+  async deleteInvitation(params: { email?: string, token?: string }): Promise<boolean> {
+    const { email, token } = params;
+
+    if (!email && !token) {
+      throw new Error("Either email or token must be provided");
+    }
+
+    let placeholderUser: User | null = null;
+
+    // Find the invitation user by email or token
+    if (email) {
+      placeholderUser = await this.userRepository.findValidInvitationByEmail(email);
+    } else if (token) {
+      placeholderUser = await this.userRepository.findByInvitationToken(token);
+    }
+
+    // If no invitation found, return false
+    if (!placeholderUser) {
+      return false;
+    }
+
+    // Make sure it's a placeholder user (invitation)
+    if (!placeholderUser.isPlaceholder) {
+      throw new Error("Cannot delete a non-placeholder user");
+    }
+
+    // Delete the placeholder user
+    await this.userRepository.deleteUser(placeholderUser.id);
+
+    return true;
+  }
 }
