@@ -4,6 +4,7 @@ import { auth } from "express-oauth2-jwt-bearer";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
 import { S3Client } from "@aws-sdk/client-s3";
+import { EmailService } from "../services/email";
 
 interface FastifyAuth0Options {
   domain: string;
@@ -122,6 +123,14 @@ declare module "fastify" {
       client: S3Client;
       bucket: string;
       region: string;
+    };
+    email: {
+      service: EmailService;
+      sendInvitationEmail: (
+        email: string,
+        token: string,
+        inviterName: string,
+      ) => Promise<any>;
     };
   }
 
