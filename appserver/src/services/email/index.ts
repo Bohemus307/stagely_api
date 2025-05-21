@@ -38,7 +38,13 @@ export class EmailService {
       environment: process.env.NODE_ENV,
     });
 
-    this.sesClient = new SESClient({ region });
+    this.sesClient = new SESClient({
+      region,
+      credentials: {
+        accessKeyId: process.env.ACCESS_KEY || "",
+        secretAccessKey: process.env.SECRET_ACCESS_KEY || "",
+      },
+    });
   }
 
   /**
