@@ -39,9 +39,6 @@ export class IncidentClassificationService {
     s3Config: S3Config,
     comparisonConfig?: Partial<ComparisonConfig>,
   ) {
-    console.log(`[INIT] Initializing IncidentClassificationService`);
-    console.log(`[INIT] AWS Region: ${s3Config.region}`);
-
     this.rekognition = new RekognitionClient({
       region: s3Config.region,
       requestHandler: {
@@ -161,9 +158,6 @@ export class IncidentClassificationService {
       let labeledImageUrl: string | undefined;
       if (propertyId && userId && detectedLabels.length > 0) {
         try {
-          console.log(
-            `[INCIDENT-DETECT] Generating labeled image for propertyId=${propertyId}, userId=${userId}`,
-          );
           labeledImageUrl = await this.imageProcessor.drawBoundingBoxesOnImage(
             imageKey,
             detectedLabels,
@@ -253,7 +247,6 @@ export class IncidentClassificationService {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       try {
-        console.log(`[REKOGNITION] Retrying label detection`);
         const response = await this.rekognition.send(command);
         return response.Labels || [];
       } catch (retryError) {

@@ -304,6 +304,11 @@ export const incidentsResponseSchema = {
               },
             },
           },
+          labeledImageUrl: {
+            type: "string",
+            nullable: true,
+            description: "URL to the image with AI-detected bounding boxes",
+          },
         },
       },
     },

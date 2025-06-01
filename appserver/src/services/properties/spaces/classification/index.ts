@@ -17,10 +17,6 @@ export class SpaceClassificationService {
   private labelProcessor: LabelProcessor;
 
   constructor(fastifyS3: S3Config) {
-    console.log(`[INIT] Initializing SpaceClassificationService`);
-    console.log(`[INIT] AWS Region: ${fastifyS3.region}`);
-    console.log(`[INIT] S3 Bucket: ${fastifyS3.bucket}`);
-
     this.rekognition = new RekognitionClient({
       region: fastifyS3.region,
       // Enable timeout configuration
@@ -51,17 +47,13 @@ export class SpaceClassificationService {
     try {
       // Extract S3 key from URL
       const key = this.imageProcessor.extractS3Key(imageUrl);
-      console.log(`[CLASSIFY] Extracted S3 key: ${key}`);
 
-      // Get optimized image data from S3
-      console.log(`[CLASSIFY] Fetching image from S3: ${key}`);
       const imageData = await this.imageProcessor.getOptimizedImageFromS3(key);
       console.log(
         `[CLASSIFY] Image optimized from S3: ${key}, size: ${imageData.length} bytes`,
       );
 
       // Analyze with Rekognition (with timeout)
-      console.log(`[CLASSIFY] Starting Rekognition analysis for ${key}`);
       let labels: Label[] = [];
       try {
         labels = await Promise.race([
@@ -70,7 +62,6 @@ export class SpaceClassificationService {
             setTimeout(() => reject(new Error("Rekognition timeout")), 12000),
           ),
         ]);
-        console.log(`Detected ${labels.length} labels with Rekognition`);
       } catch (rekognitionError) {
         console.error("Rekognition processing failed:", rekognitionError);
         // Continue with empty labels instead of failing
@@ -78,10 +69,6 @@ export class SpaceClassificationService {
         console.log(`[CLASSIFY] Rekognition failed - using empty labels`);
       }
 
-      // Process labels to determine space type
-      console.log(
-        `[CLASSIFY] Processing ${labels.length} labels: ${labels.map((l) => l.Name).join(", ")}`,
-      );
       const result = this.labelProcessor.processLabels(labels);
 
       const totalTime = Date.now() - startTime;
@@ -112,10 +99,6 @@ export class SpaceClassificationService {
    * Detect labels in an image using Rekognition with optimized parameters
    */
   private async detectLabels(imageData: Buffer): Promise<Label[]> {
-    console.log(
-      `[REKOGNITION] Starting label detection on image (${imageData.length} bytes)`,
-    );
-
     // Use optimized parameters for faster processing with better results
     const command = new DetectLabelsCommand({
       Image: { Bytes: imageData },
@@ -124,7 +107,6 @@ export class SpaceClassificationService {
     });
 
     try {
-      console.log(`[REKOGNITION] Sending request to AWS Rekognition`);
       const startTime = Date.now();
       const response = await this.rekognition.send(command);
       const duration = Date.now() - startTime;

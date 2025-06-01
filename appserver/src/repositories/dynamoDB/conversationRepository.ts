@@ -123,7 +123,6 @@ export class DynamoDBConversationRepository {
     };
 
     const result = await this.documentClient.send(new ScanCommand(params));
-    console.log("Raw result.Items:", JSON.stringify(result.Items, null, 2));
 
     return {
       conversations: (result.Items || []) as DynamoDBConversation[],

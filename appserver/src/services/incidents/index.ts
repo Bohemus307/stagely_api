@@ -812,10 +812,6 @@ export class IncidentService {
       const spaceClassification =
         await this.spaceClassificationService.classifyImage(imageUrl);
 
-      // 2. Then use incident classification to detect issues
-      console.log(
-        `[SERVICE] Detecting incidents with propertyId=${propertyId}, userId=${userId}`,
-      );
       const incidentClassification =
         await this.incidentClassificationService.detectIncidents(
           propertyImage as PropertyImage,

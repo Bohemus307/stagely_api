@@ -27,17 +27,6 @@ export class EmailService {
     this.appUrl =
       options.appUrl || process.env.APP_URL || "https://app.stagely.com";
 
-    // Log email configuration
-    console.log("EMAIL SERVICE CONFIG:", {
-      region,
-      fromAddress: this.defaultFromAddress,
-      replyToAddress: this.defaultReplyToAddress,
-      appUrl: this.appUrl,
-      sesRegionEnvVar: !!process.env.SES_REGION,
-      fromAddressEnvVar: !!process.env.SES_FROM_ADDRESS,
-      environment: process.env.NODE_ENV,
-    });
-
     this.sesClient = new SESClient({
       region,
       credentials: {
@@ -59,14 +48,6 @@ export class EmailService {
     token: string,
     inviterName?: string,
   ): Promise<string> {
-    // Log email sending request
-    console.log("EMAIL SENDING REQUESTED:", {
-      to: email,
-      type: "invitation",
-      inviterName: inviterName || "unknown",
-      environment: process.env.NODE_ENV,
-      hasToken: !!token,
-    });
     const params = {
       Source: this.defaultFromAddress,
       Destination: {
@@ -131,13 +112,6 @@ export class EmailService {
     };
 
     try {
-      console.log("ATTEMPTING TO SEND EMAIL VIA SES:", {
-        to: email,
-        subject: `${inviterName || "Someone"} invited you to Stagely`,
-        sesConfigured: !!this.sesClient,
-        region: this.sesClient.config.region,
-      });
-
       const command = new SendEmailCommand(params);
       const response = await this.sesClient.send(command);
 
