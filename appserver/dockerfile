@@ -1,7 +1,7 @@
 # Start with a Node.js 20 Alpine image for smaller size
 FROM node:24-alpine AS build
 
-RUN apt-get update && apt-get install -y fontconfig fonts-liberation
+RUN apk add --no-cache fontconfig ttf-liberation
 
 # Set working directory
 WORKDIR /app
