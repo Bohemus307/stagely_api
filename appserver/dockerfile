@@ -1,7 +1,8 @@
 # Start with a Node.js 20 Alpine image for smaller size
 FROM node:24-alpine AS build
 
-RUN apk add --no-cache fontconfig ttf-liberation
+RUN apk add --no-cache fontconfig ttf-liberation && \
+    fc-cache -f -v
 
 # Set working directory
 WORKDIR /app
@@ -27,6 +28,9 @@ RUN pnpm run build
 
 # Create production image
 FROM node:24-alpine
+
+RUN apk add --no-cache fontconfig ttf-liberation && \
+    fc-cache -f -v
 
 # Set environment variables
 ENV NODE_ENV=production
