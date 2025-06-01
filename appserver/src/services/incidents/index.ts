@@ -821,7 +821,6 @@ export class IncidentService {
           propertyImage as PropertyImage,
           [],
           propertyId,
-          userId,
         );
 
       console.log(

@@ -65,10 +65,9 @@ export class IncidentClassificationService {
     newImage: PropertyImage,
     previousImages: PropertyImage[] = [],
     propertyId?: number,
-    userId?: string,
   ): Promise<IncidentDetectionResult> {
     console.log(
-      `[INCIDENT-DETECT] Starting incident detection for image: ${newImage.imageUrl} (ID: ${newImage.id}), propertyId=${propertyId}, userId=${userId}`,
+      `[INCIDENT-DETECT] Starting incident detection for image: ${newImage.imageUrl} (ID: ${newImage.id}), propertyId=${propertyId}`,
     );
     const startTime = Date.now();
 
@@ -158,37 +157,30 @@ export class IncidentClassificationService {
 
       // Generate labeled image if propertyId and userId are provided and there are labels to show
       let labeledImageUrl: string | undefined;
-      if (propertyId && userId && detectedLabels.length > 0) {
+      if (propertyId && detectedLabels.length > 0) {
         try {
           console.log(
-            `[INCIDENT-DETECT] Attempting to generate labeled image with propertyId=${propertyId}, userId=${userId}, labels=${detectedLabels.length}, imageKey=${imageKey}`,
+            `[INCIDENT-DETECT] Attempting to generate labeled image with propertyId=${propertyId}, labels=${detectedLabels.length}, imageKey=${imageKey}`,
           );
           labeledImageUrl = await this.imageProcessor.drawBoundingBoxesOnImage(
             imageKey,
             detectedLabels,
             propertyId,
-            userId,
           );
           console.log(
             `[INCIDENT-DETECT] Successfully generated labeled image: ${labeledImageUrl}`,
           );
         } catch (imageError) {
           console.error(
-            `[INCIDENT-DETECT] Error generating labeled image for propertyId=${propertyId}, userId=${userId}:`,
+            `[INCIDENT-DETECT] Error generating labeled image for propertyId=${propertyId}`,
             imageError,
           );
           // Continue without labeled image if generation fails
         }
       } else {
         console.log(
-          `[INCIDENT-DETECT] Not generating labeled image: propertyId=${propertyId}, userId=${userId}, labels=${detectedLabels.length}`,
+          `[INCIDENT-DETECT] Not generating labeled image: propertyId=${propertyId}, labels=${detectedLabels.length}`,
         );
-
-        // Log specific reason for not generating
-        if (!propertyId) console.log("[INCIDENT-DETECT] Missing propertyId");
-        if (!userId) console.log("[INCIDENT-DETECT] Missing userId");
-        if (detectedLabels.length === 0)
-          console.log("[INCIDENT-DETECT] No labels detected");
       }
 
       // Create final result
@@ -341,6 +333,6 @@ export class IncidentClassificationService {
     const newImage = sortedImages[0];
     const previousImages = sortedImages.slice(1);
 
-    return this.detectIncidents(newImage, previousImages, propertyId, userId);
+    return this.detectIncidents(newImage, previousImages, propertyId);
   }
 }

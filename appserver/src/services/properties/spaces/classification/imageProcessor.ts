@@ -43,7 +43,6 @@ export class ImageProcessor {
     originalImageKey: string,
     detectedLabels: DetectedLabel[],
     propertyId: number,
-    userId: string,
   ): Promise<string> {
     try {
       // Get the original image
@@ -74,7 +73,7 @@ export class ImageProcessor {
 
       // Generate a path for the labeled image
       const timestamp = new Date().getTime();
-      const labeledKey = `incidents/${propertyId}/${userId}/${timestamp}_labeled.jpg`;
+      const labeledKey = `incidents/${propertyId}/${timestamp}_labeled.jpg`;
 
       // Upload the labeled image to S3
       await this.s3Client.send(
