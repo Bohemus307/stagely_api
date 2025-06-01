@@ -68,7 +68,7 @@ export class IncidentClassificationService {
     userId?: string,
   ): Promise<IncidentDetectionResult> {
     console.log(
-      `[INCIDENT-DETECT] Starting incident detection for image: ${(newImage.id, userId, propertyId)}`,
+      `[INCIDENT-DETECT] Starting incident detection for image: ${newImage.imageUrl} (ID: ${newImage.id}), propertyId=${propertyId}, userId=${userId}`,
     );
     const startTime = Date.now();
 
@@ -160,15 +160,21 @@ export class IncidentClassificationService {
       let labeledImageUrl: string | undefined;
       if (propertyId && userId && detectedLabels.length > 0) {
         try {
+          console.log(
+            `[INCIDENT-DETECT] Attempting to generate labeled image with propertyId=${propertyId}, userId=${userId}, labels=${detectedLabels.length}, imageKey=${imageKey}`,
+          );
           labeledImageUrl = await this.imageProcessor.drawBoundingBoxesOnImage(
             imageKey,
             detectedLabels,
             propertyId,
             userId,
           );
+          console.log(
+            `[INCIDENT-DETECT] Successfully generated labeled image: ${labeledImageUrl}`,
+          );
         } catch (imageError) {
           console.error(
-            "[INCIDENT-DETECT] Error generating labeled image:",
+            `[INCIDENT-DETECT] Error generating labeled image for propertyId=${propertyId}, userId=${userId}:`,
             imageError,
           );
           // Continue without labeled image if generation fails
@@ -177,6 +183,12 @@ export class IncidentClassificationService {
         console.log(
           `[INCIDENT-DETECT] Not generating labeled image: propertyId=${propertyId}, userId=${userId}, labels=${detectedLabels.length}`,
         );
+
+        // Log specific reason for not generating
+        if (!propertyId) console.log("[INCIDENT-DETECT] Missing propertyId");
+        if (!userId) console.log("[INCIDENT-DETECT] Missing userId");
+        if (detectedLabels.length === 0)
+          console.log("[INCIDENT-DETECT] No labels detected");
       }
 
       // Create final result
@@ -305,6 +317,8 @@ export class IncidentClassificationService {
    */
   async processMultipleImages(
     images: PropertyImage[],
+    propertyId?: number,
+    userId?: string,
   ): Promise<IncidentDetectionResult> {
     if (images.length === 0) {
       return {
@@ -327,6 +341,6 @@ export class IncidentClassificationService {
     const newImage = sortedImages[0];
     const previousImages = sortedImages.slice(1);
 
-    return this.detectIncidents(newImage, previousImages);
+    return this.detectIncidents(newImage, previousImages, propertyId, userId);
   }
 }

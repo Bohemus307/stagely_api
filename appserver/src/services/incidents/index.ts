@@ -30,6 +30,7 @@ export interface CreateIncidentInput {
   reportedAt?: Date | string;
   severity: IncidentSeverity;
   status?: IncidentStatus;
+  userId?: number;
   images?: {
     imageUrl: string;
     caption?: string;
@@ -144,6 +145,8 @@ export class IncidentService {
           const detectionResult =
             await this.incidentClassificationService.processMultipleImages(
               propertyImages,
+              incident.propertyId,
+              data.userId?.toString() || undefined,
             );
 
           // Update incident with classification results // more to come now
@@ -153,6 +156,7 @@ export class IncidentService {
             spaceType: (detectionResult.spaceType as SpaceType) || undefined,
             featureVector: detectionResult.featureVector || Prisma.JsonNull,
             aiClassified: true,
+            labeledImageUrl: detectionResult.labeledImageUrl,
           });
         } catch (error) {
           console.error("Error classifying incident:", error);
