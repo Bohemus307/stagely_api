@@ -1134,7 +1134,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             reportedAt: incidentData.reportedAt,
             severity: incidentData.severity,
             status: incidentData.status || IncidentStatus.Open,
-            userId: user.id,
             images: incidentData.images,
           });
         }
