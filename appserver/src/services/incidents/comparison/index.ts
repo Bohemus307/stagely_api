@@ -68,7 +68,7 @@ export class IncidentClassificationService {
     userId?: string,
   ): Promise<IncidentDetectionResult> {
     console.log(
-      `[INCIDENT-DETECT] Starting incident detection for image: ${newImage.id}`,
+      `[INCIDENT-DETECT] Starting incident detection for image: ${(newImage.id, userId, propertyId)}`,
     );
     const startTime = Date.now();
 
@@ -88,6 +88,8 @@ export class IncidentClassificationService {
         confidence,
         detectedLabels,
       } = this.labelProcessor.processLabelsForIncidents(newImageLabels);
+
+      console.log("[INCIDENT-DETECT] Labels for initial photo", detectedLabels);
 
       // Find the most recent previous image for comparison
       let changes: DetectedChange[] = [];
@@ -186,7 +188,7 @@ export class IncidentClassificationService {
         detectedLabels,
         changes,
         featureVector,
-        labeledImageUrl, // Include the labeled image URL if available
+        labeledImageUrl,
       };
 
       const totalTime = Date.now() - startTime;

@@ -815,9 +815,9 @@ export class IncidentService {
       const incidentClassification =
         await this.incidentClassificationService.detectIncidents(
           propertyImage as PropertyImage,
-          [], // No previous images
-          propertyId, // Pass property ID
-          userId, // Pass user ID
+          [],
+          propertyId,
+          userId,
         );
 
       console.log(

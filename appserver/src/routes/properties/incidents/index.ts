@@ -1059,6 +1059,8 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           where: { auth0Id: request?.user?.sub },
         });
 
+        console.log("CURRENT USER CREATING INCIDENT", user);
+
         if (!user) {
           return sendUnauthorized(reply, "User not found");
         }
@@ -1126,7 +1128,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               }),
             );
           }
-
+          console.log("PROPERTY IN ROUTE", property);
           incident = await incidentService.createIncident({
             propertyId: property.id,
             incidentType: incidentData.incidentType,
