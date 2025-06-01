@@ -46,7 +46,6 @@ async function dynamoDBPlugin(
       accessKeyId: process.env.ACCESS_KEY,
       secretAccessKey: process.env.SECRET_ACCESS_KEY,
     };
-    console.log("Using explicit credentials from environment variables");
   } else {
     console.log("WARNING: No AWS credentials found in environment variables");
   }

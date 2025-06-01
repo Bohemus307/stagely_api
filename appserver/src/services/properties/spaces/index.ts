@@ -628,7 +628,6 @@ export class PropertySpaceService {
         propertyId,
         [propertyImage.id],
       );
-      console.log("CLASSIFICATION RESULTS", classificationResults);
 
       // Delete the temporary space as we now have a properly classified one
       await this.deleteSpace(tempSpace.id);

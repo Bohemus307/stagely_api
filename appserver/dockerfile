@@ -1,5 +1,7 @@
 # Start with a Node.js 20 Alpine image for smaller size
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
+
+RUN apt-get update && apt-get install -y fontconfig fonts-liberation
 
 # Set working directory
 WORKDIR /app
@@ -24,7 +26,7 @@ COPY . .
 RUN pnpm run build
 
 # Create production image
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Set environment variables
 ENV NODE_ENV=production

@@ -229,24 +229,17 @@ export class ImageProcessor {
    * Get optimized image data from S3 with adaptive quality
    */
   async getOptimizedImageFromS3(key: string): Promise<Buffer> {
-    console.log(`[S3] Fetching image: ${key}`);
     try {
       // Check S3 cache first
       const now = Date.now();
       if (this.s3Cache.has(key)) {
         const cached = this.s3Cache.get(key)!;
         if (now - cached.timestamp < this.S3_CACHE_TTL) {
-          console.log(
-            `[S3] Cache hit for ${key}, size: ${cached.buffer.length} bytes`,
-          );
           return cached.buffer;
         } else {
-          // Expired, remove from cache
-          console.log(`[S3] Cache expired for ${key}`);
           this.s3Cache.delete(key);
         }
       }
-      console.log(`[S3] Cache miss for ${key}`);
 
       // Try a faster approach first - get a partial range of the image
       try {
@@ -256,14 +249,11 @@ export class ImageProcessor {
           Range: "bytes=0-4194304", // First 4MB - enough for most images
         });
 
-        console.log(`[S3] Sending partial range request (0-4MB) for ${key}`);
         const startTime = Date.now();
         const response = await this.s3Client.send(command);
         const duration = Date.now() - startTime;
-        console.log(`[S3] Partial range request completed in ${duration}ms`);
 
         if (response.Body) {
-          console.log(`[S3] Processing response body stream`);
           // Convert stream to buffer efficiently
           const chunks: Buffer[] = [];
           for await (const chunk of response.Body as any) {
@@ -271,9 +261,6 @@ export class ImageProcessor {
           }
 
           const originalBuffer = Buffer.concat(chunks);
-          console.log(
-            `[S3] Stream converted to buffer, size: ${originalBuffer.length} bytes`,
-          );
 
           // Try to process this partial image with adaptive quality
           try {
