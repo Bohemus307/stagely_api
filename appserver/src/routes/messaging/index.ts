@@ -1,4 +1,4 @@
-// src/routes/messaging/index.ts
+// src/routes/messaging/index.ts - Fixed implementation with correct schema usage
 import { FastifyInstance } from "fastify";
 import { MessagingService } from "../../services/messaging";
 import {
@@ -6,6 +6,7 @@ import {
   sendForbidden,
   sendUnauthorized,
 } from "../../utils/responses";
+import messagingSchemas from "../../schemas/messaging-schema";
 
 // Define interface types for request parameters and bodies
 interface CreateConversationBody {
@@ -53,7 +54,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
     fastify.dynamoDB.documentClient
   );
 
-  // Create conversation and invite user
+  // Create conversation
   fastify.route({
     method: "POST",
     url: "/conversations",
@@ -79,17 +80,23 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Initial message to send (optional)"
           }
         },
-        required: ["userId", "participants"]
+        required: ["userId", "participants"],
+        additionalProperties: false
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: { type: "object" },
-            message: { type: "object", nullable: true }
+            conversation: messagingSchemas.conversationResponseSchema,
+            message: {
+              ...messagingSchemas.messageResponseSchema,
+              nullable: true
+            }
           }
-        }
+        },
+        401: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -116,7 +123,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         return {
           success: true,
           conversation: result.conversation,
-          message: result.message
+          message: result.message || null
         };
       } catch (err: any) {
         fastify.log.error(err);
@@ -153,19 +160,13 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Last evaluated key for pagination"
           }
         },
-        required: ["userId"]
+        required: ["userId"],
+        additionalProperties: false
       },
       response: {
-        200: {
-          type: "object",
-          properties: {
-            conversations: {
-              type: "array",
-              items: { type: "object" }
-            },
-            lastKey: { type: "string", nullable: true }
-          }
-        }
+        200: messagingSchemas.conversationsResponseSchema,
+        401: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -222,7 +223,8 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Conversation ID"
           }
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
+        additionalProperties: false
       },
       querystring: {
         type: "object",
@@ -232,16 +234,21 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "ID of the user"
           }
         },
-        required: ["userId"]
+        required: ["userId"],
+        additionalProperties: false
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: { type: "object" }
+            conversation: messagingSchemas.conversationResponseSchema
           }
-        }
+        },
+        401: messagingSchemas.errorResponseSchema,
+        403: messagingSchemas.errorResponseSchema,
+        404: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -309,7 +316,8 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Conversation ID"
           }
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
+        additionalProperties: false
       },
       querystring: {
         type: "object",
@@ -327,19 +335,15 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Last evaluated key for pagination"
           }
         },
-        required: ["userId"]
+        required: ["userId"],
+        additionalProperties: false
       },
       response: {
-        200: {
-          type: "object",
-          properties: {
-            messages: {
-              type: "array",
-              items: { type: "object" }
-            },
-            lastKey: { type: "string", nullable: true }
-          }
-        }
+        200: messagingSchemas.messagesResponseSchema,
+        401: messagingSchemas.errorResponseSchema,
+        403: messagingSchemas.errorResponseSchema,
+        404: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -411,7 +415,8 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Conversation ID"
           }
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
+        additionalProperties: false
       },
       body: {
         type: "object",
@@ -425,16 +430,21 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Message text"
           }
         },
-        required: ["userId", "text"]
+        required: ["userId", "text"],
+        additionalProperties: false
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            message: { type: "object" }
+            message: messagingSchemas.messageResponseSchema
           }
-        }
+        },
+        401: messagingSchemas.errorResponseSchema,
+        403: messagingSchemas.errorResponseSchema,
+        404: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -460,9 +470,11 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             text
           );
 
+          console.log("MESSAGE SENT:", JSON.stringify(message, null, 2));
+
           return {
             success: true,
-            message
+            message: message
           };
         } catch (err: any) {
           if (err.name === "NotFoundError") {
@@ -503,7 +515,8 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "Conversation ID"
           }
         },
-        required: ["conversationId"]
+        required: ["conversationId"],
+        additionalProperties: false
       },
       body: {
         type: "object",
@@ -518,15 +531,15 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "IDs of messages to mark as read"
           }
         },
-        required: ["userId", "messageIds"]
+        required: ["userId", "messageIds"],
+        additionalProperties: false
       },
       response: {
-        200: {
-          type: "object",
-          properties: {
-            success: { type: "boolean", example: true }
-          }
-        }
+        200: messagingSchemas.successResponseSchema,
+        401: messagingSchemas.errorResponseSchema,
+        403: messagingSchemas.errorResponseSchema,
+        404: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
@@ -535,12 +548,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { userId, messageIds } = request.body as MarkReadBody;
         const { conversationId } = request.params as ConversationParams;
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
@@ -594,27 +605,13 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             description: "ID of the user"
           }
         },
-        required: ["userId"]
+        required: ["userId"],
+        additionalProperties: false
       },
       response: {
-        200: {
-          type: "object",
-          properties: {
-            unreadCount: { type: "integer" },
-            conversationsWithUnread: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  conversationId: { type: "string" },
-                  unreadCount: { type: "integer" },
-                  lastMessageText: { type: "string" },
-                  lastMessageTime: { type: "string" }
-                }
-              }
-            }
-          }
-        }
+        200: messagingSchemas.unreadCountResponseSchema,
+        401: messagingSchemas.errorResponseSchema,
+        500: messagingSchemas.errorResponseSchema
       },
       security: [{ bearerAuth: [] }]
     },
