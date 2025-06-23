@@ -1,12 +1,12 @@
-// src/repositories/dynamoDB/conversationRepository.ts
 import {
   PutCommand,
   GetCommand,
   QueryCommand,
   UpdateCommand,
-  ScanCommand,
   DeleteCommand,
   DynamoDBDocumentClient,
+  TransactWriteCommand,
+  BatchWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { v4 as uuidv4 } from "uuid";
 import { TableNames } from "../../config/dynamoTables";
@@ -21,7 +21,8 @@ export interface DynamoDBConversation {
   lastMessageTime?: number;
   lastMessageSenderId?: number;
   unreadCount: Record<string, number>;
-  version: number; // Added for optimistic locking
+  version: number;
+  participantId?: number;
 }
 
 export class DynamoDBConversationRepository {
@@ -30,13 +31,9 @@ export class DynamoDBConversationRepository {
 
   constructor(documentClient: any, deploymentEnv: string = "staging") {
     this.documentClient = documentClient;
-    // Append environment to table name
     this.tableName = `${TableNames.CONVERSATIONS}-${deploymentEnv}`;
   }
 
-  /**
-   * Validate participant ID
-   */
   private validateParticipant(participantId: number): void {
     if (!Number.isInteger(participantId) || participantId < 1) {
       throw new Error(`Invalid participant ID: ${participantId}`);
@@ -44,48 +41,72 @@ export class DynamoDBConversationRepository {
   }
 
   /**
-   * Create a new conversation
+   * Create a new conversation with participant records for efficient querying
    */
   async createConversation(
     data: Omit<
       DynamoDBConversation,
-      "conversationId" | "createdAt" | "unreadCount" | "version"
+      "conversationId" | "createdAt" | "unreadCount" | "version" | "participantId"
     >,
   ): Promise<DynamoDBConversation> {
     const conversationId = `conv_${uuidv4()}`;
     const now = Date.now();
 
-    // Create unreadCount object with 0 count for all participants
+    data.participants.forEach(participantId => {
+      this.validateParticipant(participantId);
+    });
+
     const unreadCount: Record<string, number> = {};
     data.participants.forEach((participantId) => {
-      this.validateParticipant(participantId);
       unreadCount[participantId.toString()] = 0;
     });
 
-    const conversation: DynamoDBConversation = {
+    const baseConversation: DynamoDBConversation = {
       conversationId,
       participants: data.participants,
       conversationType: data.conversationType || "general",
       lastMessageText: data.lastMessageText,
-      lastMessageTime: data.lastMessageTime,
+      lastMessageTime: data.lastMessageTime || now,
       lastMessageSenderId: data.lastMessageSenderId,
       createdAt: now,
       unreadCount,
       version: 1,
     };
 
-    // Create base item
-    const putParams = {
-      TableName: this.tableName,
-      Item: conversation,
-    };
+    try {
+      const mainRecord = { ...baseConversation };
 
-    await this.documentClient.send(new PutCommand(putParams));
-    return conversation;
+      const participantRecords = data.participants.map(participantId => ({
+        ...baseConversation,
+        conversationId: `${conversationId}#${participantId}`,
+        participantId,
+      }));
+
+      const allItems = [
+        { PutRequest: { Item: mainRecord } },
+        ...participantRecords.map(record => ({ PutRequest: { Item: record } }))
+      ];
+
+      for (let i = 0; i < allItems.length; i += 25) {
+        const batch = allItems.slice(i, i + 25);
+        await this.documentClient.send(new BatchWriteCommand({
+          RequestItems: {
+            [this.tableName]: batch,
+          },
+        }));
+      }
+
+      console.log(`Created conversation ${conversationId} with ${data.participants.length} participants`);
+      return mainRecord;
+
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      throw error;
+    }
   }
 
   /**
-   * Get a conversation by ID
+   * Get a conversation by ID (main record only)
    */
   async getConversationById(
     conversationId: string,
@@ -100,7 +121,7 @@ export class DynamoDBConversationRepository {
   }
 
   /**
-   * Get all conversations for a user
+   * Get conversations for a user using GSI
    */
   async getConversationsForUser(
     userId: number,
@@ -114,20 +135,40 @@ export class DynamoDBConversationRepository {
 
     const params = {
       TableName: this.tableName,
-      FilterExpression: "contains(participants, :userId)", // Filter on participants array
+      IndexName: 'participant-index',
+      KeyConditionExpression: 'participantId = :userId',
       ExpressionAttributeValues: {
-        ":userId": userId,
+        ':userId': userId,
       },
+      ScanIndexForward: false,
       Limit: limit,
       ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
     };
 
-    const result = await this.documentClient.send(new ScanCommand(params));
+    try {
+      const result = await this.documentClient.send(new QueryCommand(params));
 
-    return {
-      conversations: (result.Items || []) as DynamoDBConversation[],
-      lastEvaluatedKey: result.LastEvaluatedKey,
-    };
+      const conversations = (result.Items || []).map(item => {
+        const mainConversationId = item.conversationId.split('#')[0];
+
+        const { participantId, ...conversation } = item;
+        return {
+          ...conversation,
+          conversationId: mainConversationId,
+        };
+      }) as DynamoDBConversation[];
+
+      console.log(`Found ${conversations.length} conversations for user ${userId}`);
+
+      return {
+        conversations,
+        lastEvaluatedKey: result.LastEvaluatedKey,
+      };
+
+    } catch (error) {
+      console.error(`Error fetching conversations for user ${userId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -142,13 +183,11 @@ export class DynamoDBConversationRepository {
 
     const now = Date.now();
 
-    // Get current conversation
     const conversation = await this.getConversationById(conversationId);
     if (!conversation) {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    // Update unread counts for each participant (except sender)
     const updatedUnreadCount = { ...conversation.unreadCount };
     conversation.participants.forEach((participantId) => {
       if (participantId !== senderId) {
@@ -157,29 +196,65 @@ export class DynamoDBConversationRepository {
       }
     });
 
-    const params = {
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression: `set
-        lastMessageText = :text,
-        lastMessageTime = :time,
-        lastMessageSenderId = :senderId,
-        unreadCount = :unreadCount,
-        version = if_not_exists(version, :zero) + :one`,
-      ExpressionAttributeValues: {
-        ":text": messageText,
-        ":time": now,
-        ":senderId": senderId,
-        ":unreadCount": updatedUnreadCount,
-        ":zero": 0,
-        ":one": 1,
-      },
-      ReturnValues: ReturnValue.ALL_NEW,
+    const updateData = {
+      lastMessageText: messageText,
+      lastMessageTime: now,
+      lastMessageSenderId: senderId,
+      unreadCount: updatedUnreadCount,
+      version: (conversation.version || 0) + 1,
     };
 
     try {
-      const result = await this.documentClient.send(new UpdateCommand(params));
-      return result.Attributes as DynamoDBConversation;
+      const mainUpdateParams = {
+        TableName: this.tableName,
+        Key: { conversationId },
+        UpdateExpression: `set
+          lastMessageText = :text,
+          lastMessageTime = :time,
+          lastMessageSenderId = :senderId,
+          unreadCount = :unreadCount,
+          version = :version`,
+        ExpressionAttributeValues: {
+          ":text": messageText,
+          ":time": now,
+          ":senderId": senderId,
+          ":unreadCount": updatedUnreadCount,
+          ":version": updateData.version,
+        },
+        ReturnValues: ReturnValue.ALL_NEW,
+      };
+
+      const mainResult = await this.documentClient.send(new UpdateCommand(mainUpdateParams));
+
+      const participantUpdates = conversation.participants.map(participantId => ({
+        Update: {
+          TableName: this.tableName,
+          Key: { conversationId: `${conversationId}#${participantId}` },
+          UpdateExpression: `set
+            lastMessageText = :text,
+            lastMessageTime = :time,
+            lastMessageSenderId = :senderId,
+            unreadCount = :unreadCount,
+            version = :version`,
+          ExpressionAttributeValues: {
+            ":text": messageText,
+            ":time": now,
+            ":senderId": senderId,
+            ":unreadCount": updatedUnreadCount,
+            ":version": updateData.version,
+          },
+        },
+      }));
+
+      for (let i = 0; i < participantUpdates.length; i += 25) {
+        const batch = participantUpdates.slice(i, i + 25);
+        await this.documentClient.send(new TransactWriteCommand({
+          TransactItems: batch,
+        }));
+      }
+
+      return mainResult.Attributes as DynamoDBConversation;
+
     } catch (error: any) {
       console.error("Error updating conversation:", error);
       throw error;
@@ -192,21 +267,35 @@ export class DynamoDBConversationRepository {
   async markAsRead(conversationId: string, userId: number): Promise<void> {
     this.validateParticipant(userId);
 
-    const params = {
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression: "set unreadCount.#userId = :zero",
-      ExpressionAttributeNames: {
-        "#userId": userId.toString(),
-      },
-      ExpressionAttributeValues: {
-        ":zero": 0,
-      },
-      ConditionExpression: "attribute_exists(conversationId)",
-    };
+    const updateExpression = "set unreadCount.#userId = :zero";
+    const expressionAttributeNames = { "#userId": userId.toString() };
+    const expressionAttributeValues = { ":zero": 0 };
 
     try {
-      await this.documentClient.send(new UpdateCommand(params));
+      await this.documentClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { conversationId },
+              UpdateExpression: updateExpression,
+              ExpressionAttributeNames: expressionAttributeNames,
+              ExpressionAttributeValues: expressionAttributeValues,
+              ConditionExpression: "attribute_exists(conversationId)",
+            },
+          },
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { conversationId: `${conversationId}#${userId}` },
+              UpdateExpression: updateExpression,
+              ExpressionAttributeNames: expressionAttributeNames,
+              ExpressionAttributeValues: expressionAttributeValues,
+            },
+          },
+        ],
+      }));
+
     } catch (error: any) {
       if (error.name === "ConditionalCheckFailedException") {
         throw new Error(`Conversation not found: ${conversationId}`);
@@ -230,7 +319,7 @@ export class DynamoDBConversationRepository {
     }
 
     if (conversation.participants.includes(participantId)) {
-      return conversation; // Already a participant
+      return conversation;
     }
 
     const updatedParticipants = [...conversation.participants, participantId];
@@ -239,30 +328,50 @@ export class DynamoDBConversationRepository {
       [participantId.toString()]: 0,
     };
 
-    const params = {
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression:
-        "set participants = :participants, unreadCount = :unreadCount, version = :newVersion",
-      ExpressionAttributeValues: {
-        ":participants": updatedParticipants,
-        ":unreadCount": updatedUnreadCount,
-        ":currentVersion": conversation.version,
-        ":newVersion": conversation.version + 1,
-      },
-      ConditionExpression: "version = :currentVersion",
-      ReturnValues: ReturnValue.ALL_NEW,
+    const newVersion = (conversation.version || 0) + 1;
+
+    const newParticipantRecord = {
+      ...conversation,
+      conversationId: `${conversationId}#${participantId}`,
+      participantId,
+      participants: updatedParticipants,
+      unreadCount: updatedUnreadCount,
+      version: newVersion,
     };
 
     try {
-      const result = await this.documentClient.send(new UpdateCommand(params));
-      return result.Attributes as DynamoDBConversation;
+      await this.documentClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { conversationId },
+              UpdateExpression: "set participants = :participants, unreadCount = :unreadCount, version = :version",
+              ExpressionAttributeValues: {
+                ":participants": updatedParticipants,
+                ":unreadCount": updatedUnreadCount,
+                ":version": newVersion,
+              },
+            },
+          },
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: newParticipantRecord,
+            },
+          },
+        ],
+      }));
+
+      return {
+        ...conversation,
+        participants: updatedParticipants,
+        unreadCount: updatedUnreadCount,
+        version: newVersion,
+      };
+
     } catch (error: any) {
-      if (error.name === "ConditionalCheckFailedException") {
-        throw new Error(
-          "Conversation was modified by another process. Please retry.",
-        );
-      }
+      console.error("Error adding participant:", error);
       throw error;
     }
   }
@@ -276,45 +385,50 @@ export class DynamoDBConversationRepository {
   ): Promise<DynamoDBConversation> {
     this.validateParticipant(userId);
 
-    // Get current conversation
     const conversation = await this.getConversationById(conversationId);
     if (!conversation) {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    // Filter out the user
-    const updatedParticipants = conversation.participants.filter(
-      (p) => p !== userId,
-    );
-
-    // Remove user from unread counts
+    const updatedParticipants = conversation.participants.filter(p => p !== userId);
     const updatedUnreadCount = { ...conversation.unreadCount };
     delete updatedUnreadCount[userId.toString()];
 
-    const params = {
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression:
-        "set participants = :participants, unreadCount = :unreadCount, version = :newVersion",
-      ExpressionAttributeValues: {
-        ":participants": updatedParticipants,
-        ":unreadCount": updatedUnreadCount,
-        ":currentVersion": conversation.version,
-        ":newVersion": conversation.version + 1,
-      },
-      ConditionExpression: "version = :currentVersion",
-      ReturnValues: ReturnValue.ALL_NEW,
-    };
+    const newVersion = (conversation.version || 0) + 1;
 
     try {
-      const result = await this.documentClient.send(new UpdateCommand(params));
-      return result.Attributes as DynamoDBConversation;
+      await this.documentClient.send(new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: { conversationId },
+              UpdateExpression: "set participants = :participants, unreadCount = :unreadCount, version = :version",
+              ExpressionAttributeValues: {
+                ":participants": updatedParticipants,
+                ":unreadCount": updatedUnreadCount,
+                ":version": newVersion,
+              },
+            },
+          },
+          {
+            Delete: {
+              TableName: this.tableName,
+              Key: { conversationId: `${conversationId}#${userId}` },
+            },
+          },
+        ],
+      }));
+
+      return {
+        ...conversation,
+        participants: updatedParticipants,
+        unreadCount: updatedUnreadCount,
+        version: newVersion,
+      };
+
     } catch (error: any) {
-      if (error.name === "ConditionalCheckFailedException") {
-        throw new Error(
-          "Conversation was modified by another process. Please retry.",
-        );
-      }
+      console.error("Error removing participant:", error);
       throw error;
     }
   }
