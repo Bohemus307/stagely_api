@@ -1,4 +1,3 @@
-// src/routes/messaging/index.ts - Fixed implementation with correct schema usage
 import { FastifyInstance } from "fastify";
 import { MessagingService } from "../../services/messaging";
 import {
@@ -8,7 +7,6 @@ import {
 } from "../../utils/responses";
 import messagingSchemas from "../../schemas/messaging-schema";
 
-// Define interface types for request parameters and bodies
 interface CreateConversationBody {
   userId: number;
   participants: number[];
@@ -48,13 +46,11 @@ declare module "fastify" {
  * Basic messaging routes between existing users
  */
 async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
-  // Create messaging service
   const messagingService = new MessagingService(
     fastify.prisma,
     fastify.dynamoDB.documentClient
   );
 
-  // Create conversation
   fastify.route({
     method: "POST",
     url: "/conversations",
@@ -102,34 +98,49 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        const { userId, participants, initialMessage } = request.body as CreateConversationBody;
+      const { userId, participants, initialMessage } = request.body as CreateConversationBody;
 
-        // Get user by id and verify its auth0 id matches
-        const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: userId }
+      });
+
+      if (!user || user.auth0Id !== request?.user?.sub) {
+        console.log('Auth mismatch:', {
+          userAuth0Id: user?.auth0Id,
+          tokenSub: request?.user?.sub
         });
-
-        // Verify this user belongs to the authenticated user
-        if (!user || user.auth0Id !== request?.user?.sub) {
-          return sendUnauthorized(reply, "User not found or not authorized");
-        }
-
-        const result = await messagingService.createConversation(
-          user.id,
-          participants,
-          initialMessage
-        );
-
-        return {
-          success: true,
-          conversation: result.conversation,
-          message: result.message || null
-        };
-      } catch (err: any) {
-        fastify.log.error(err);
-        reply.code(500).send({
+        return reply.code(401).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: "User not found or not authorized"
+        });
+      }
+
+      const result = await messagingService.createConversation(
+        user.id,
+        participants,
+        initialMessage
+      );
+
+      return {
+        success: true,
+        conversation: result.conversation,
+        message: result.message || null
+      };
+    } catch (err: any) {
+      console.log('=== ERROR IN CREATE CONVERSATION ===');
+      console.log('Error type:', typeof err);
+      console.log('Error constructor:', err.constructor.name);
+      console.log('Error message:', err.message);
+      console.log('Error stack:', err.stack);
+      console.log('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+
+      fastify.log.error('Create conversation error:', err);
+
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
+      reply.code(500).send({
+        success: false,
+        error: errorMessage
         });
       }
     }
@@ -174,12 +185,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         const { userId, limit, lastKey } = request.query as QueryParams;
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
@@ -257,12 +266,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { userId } = request.query as { userId: number };
         const { conversationId } = request.params as ConversationParams;
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
@@ -352,12 +359,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { userId, limit, lastKey } = request.query as QueryParams;
         const { conversationId } = request.params as ConversationParams;
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
@@ -453,12 +458,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { userId, text } = request.body as SendMessageBody;
         const { conversationId } = request.params as ConversationParams;
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
@@ -619,12 +622,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
       try {
         const { userId } = request.query as { userId: number };
 
-        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: userId }
         });
 
-        // Verify this user belongs to the authenticated user
         if (!user || user.auth0Id !== request?.user?.sub) {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
