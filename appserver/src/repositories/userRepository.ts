@@ -421,4 +421,79 @@ async createPlaceholderUser(params: {
     }
   });
 }
+
+/**
+ * Get users that have previously messaged with the given user
+ * @param participantIds - Array of user IDs from conversations
+ * @param search - Optional search query to filter users
+ * @param excludeInvited - Whether to exclude placeholder/invited users
+ * @param limit - Maximum number of results
+ */
+async getPreviouslyMessagedUsers({
+  participantIds,
+  search,
+  excludeInvited = true,
+  limit = 20
+}: {
+  participantIds: number[];
+  search?: string;
+  excludeInvited?: boolean;
+  limit?: number;
+}): Promise<Pick<User, "id" | "firstName" | "lastName" | "email" | "profilePictureUrl" | "createdAt">[]> {
+
+  if (participantIds.length === 0) {
+    return [];
+  }
+
+  const whereConditions: any = {
+    id: {
+      in: participantIds
+    }
+  };
+
+  // Add search filter if provided
+  if (search && search.trim().length >= 2) {
+    const searchTerm = search.trim();
+    whereConditions.OR = [
+      {
+        firstName: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      },
+      {
+        lastName: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      },
+      {
+        email: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      }
+    ];
+  }
+
+  if (excludeInvited) {
+    whereConditions.isPlaceholder = false;
+  }
+
+  return this.prisma.user.findMany({
+    where: whereConditions,
+    take: limit,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      profilePictureUrl: true,
+      createdAt: true
+    },
+    orderBy: {
+      firstName: 'asc'
+    }
+  });
+}
 }

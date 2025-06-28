@@ -24,7 +24,10 @@ interface QueryParams {
  */
 async function userRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
-  const userService = new UserService(fastify.prisma);
+  const userService = new UserService(
+    fastify.prisma,
+    fastify.dynamoDB?.documentClient
+  );
 
   // GET /users
   fastify.route({
@@ -377,6 +380,143 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       return results;
     },
   });
+
+  // GET /users/previously-messaged
+  fastify.route({
+    method: "GET",
+    url: "/previously-messaged",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["users"],
+      description: "Get users that the current user has previously messaged",
+      summary: "Get previously messaged users",
+      querystring: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "Current user ID"
+          },
+          search: {
+            type: "string",
+            description: "Search query to filter users",
+            minLength: 2
+          },
+          excludeInvited: {
+            type: "boolean",
+            default: true,
+            description: "Exclude placeholder/invited users"
+          },
+          limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 50,
+            default: 20,
+            description: "Maximum number of results"
+          }
+        },
+        required: ["userId"]
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            users: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "integer" },
+                  firstName: { type: "string" },
+                  lastName: { type: "string" },
+                  email: { type: "string", format: "email" },
+                  profilePictureUrl: { type: "string", format: "uri" },
+                  createdAt: { type: "string", format: "date-time" }
+                }
+              }
+            },
+            total: { type: "integer" }
+          }
+        },
+        401: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 401 },
+                message: { type: "string", example: "Unauthorized" }
+              }
+            }
+          }
+        },
+        500: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                statusCode: { type: "number", example: 500 },
+                message: { type: "string", example: "Messaging service not available" }
+              }
+            }
+          }
+        }
+      },
+      security: [{ bearerAuth: [] }]
+    },
+    handler: async (request, reply) => {
+      const { userId, search, excludeInvited = true, limit = 20 } = request.query as {
+        userId: number;
+        search?: string;
+        excludeInvited?: boolean;
+        limit?: number;
+      };
+
+      try {
+        const user = await fastify.prisma.user.findUnique({
+          where: { id: userId }
+        });
+
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return reply.code(401).send({
+            error: {
+              statusCode: 401,
+              message: "User not found or not authorized"
+            }
+          });
+        }
+
+        const result = await userService.getPreviouslyMessagedUsers({
+          userId,
+          search,
+          excludeInvited,
+          limit
+        });
+
+        return result;
+      } catch (err: any) {
+        fastify.log.error(err);
+
+        if (err.message?.includes("Messaging service not available")) {
+          return reply.code(500).send({
+            error: {
+              statusCode: 500,
+              message: "Messaging service not available"
+            }
+          });
+        }
+
+        return reply.code(500).send({
+          error: {
+            statusCode: 500,
+            message: err.message || "Internal server error"
+          }
+        });
+      }
+    }
+  });
+
 
   // GET /users/stats
   // fastify.route({
