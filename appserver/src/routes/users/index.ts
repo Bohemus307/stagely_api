@@ -3,6 +3,7 @@ import { NotFoundError, ConflictError } from "../../utils/errors";
 import { UserService } from "../../services/users";
 import { sendNotFound, sendConflict } from "../../utils/responses";
 import userSchemas from "../../schemas/user-schema";
+import { EventType } from "../../repositories/dynamoDB/eventsRepository";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -184,18 +185,30 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       try {
-        const user = await userService.createUser(request.body as any);
+        const userData = request.body as any;
 
-        reply.code(201);
-        return user;
-      } catch (err: any) {
-        // Handle specific errors with appropriate status codes
-        fastify.log.error(err);
+        // Create the user
+        const user = await userService.createUser(userData);
 
-        if (err instanceof ConflictError || err.code === "P2002") {
-          return sendConflict(reply, "Email already in use");
+        // ✅ HIGH PRIORITY EVENT: Log user creation for business tracking
+        await fastify.eventService.logUserCreated(
+          user.id,
+          user.email,
+          user.firstName,
+          user.lastName,
+          fastify.getEventMetadata(request)
+        );
+
+        return reply.code(201).send(user);
+      } catch (err) {
+        if (err instanceof ConflictError) {
+          return reply.code(409).send({
+            error: {
+              statusCode: 409,
+              message: err.message,
+            },
+          });
         }
-
         throw err;
       }
     },
@@ -252,20 +265,28 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
       ],
     },
     handler: async (request, reply) => {
-      const { id } = request.params as ParamsWithId;
-
       try {
-        const user = await userService.updateUser(
-          parseInt(id),
-          request.body as any,
-        );
+        const { id } = request.params as ParamsWithId;
+        const updateData = request.body as any;
+
+        // Get the original user data for comparison
+        const originalUser = await userService.getUserById(parseInt(id));
+
+        // Update the user
+        const user = await userService.updateUser(parseInt(id), updateData);
+
         return user;
       } catch (err) {
         if (err instanceof NotFoundError) {
           return sendNotFound(reply, "User not found");
         }
         if (err instanceof ConflictError) {
-          return sendConflict(reply, err.message);
+          return reply.code(409).send({
+            error: {
+              statusCode: 409,
+              message: err.message,
+            },
+          });
         }
         throw err;
       }

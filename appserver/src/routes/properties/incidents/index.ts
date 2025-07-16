@@ -231,6 +231,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const result = await incidentService.getIncidents(queryParams);
+
       return result;
     },
   });
@@ -344,6 +345,8 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const incident = await incidentService.getIncidentById(parseInt(id));
+        const startTime = Date.now();
+        const duration = Date.now() - startTime;
 
         // Verify property belongs to authenticated user
         const user = await fastify.prisma.user.findUnique({
@@ -362,6 +365,14 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this incident",
           );
         }
+
+        // ✅ CRITICAL EVENT: Log incident viewed for mobile app prefetching
+        fastify.logCriticalEvent('incident_viewed', request, {
+          incidentId: incident.id,
+          propertyId: incident.propertyId,
+          incidentType: incident.incidentType
+        });
+
 
         return incident;
       } catch (err) {
@@ -504,6 +515,33 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           incidentData,
         );
 
+        // ✅ CRITICAL EVENTS: Log specific changes only
+        setImmediate(async () => {
+          try {
+            // Check for status change
+            if (incidentData.status && existingIncident.status !== incidentData.status) {
+              fastify.logCriticalEvent('incident_status_changed', request, {
+                incidentId: parseInt(id),
+                propertyId: existingIncident.propertyId,
+                oldStatus: existingIncident.status,
+                newStatus: incidentData.status
+              });
+            }
+
+            // Check for severity change
+            if (incidentData.severity && existingIncident.severity !== incidentData.severity) {
+              fastify.logCriticalEvent('incident_severity_changed', request, {
+                incidentId: parseInt(id),
+                propertyId: existingIncident.propertyId,
+                oldSeverity: existingIncident.severity,
+                newSeverity: incidentData.severity
+              });
+            }
+          } catch (error) {
+            fastify.log.error('Failed to log incident update events:', error);
+          }
+        });
+
         return incident;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -625,6 +663,29 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           resolvedAt,
         );
 
+        // ✅ CRITICAL EVENT: Log status change
+        fastify.logCriticalEvent('incident_status_changed', request, {
+          incidentId: parseInt(id),
+          propertyId: existingIncident.propertyId,
+          oldStatus: existingIncident.status,
+          newStatus: status
+        });
+
+        // ✅ HIGH PRIORITY EVENT: Log resolution if applicable
+        if (status === IncidentStatus.Resolved || status === IncidentStatus.Closed) {
+          const resolutionTime = resolvedAt ?
+            new Date(resolvedAt).getTime() - new Date(existingIncident.reportedAt).getTime() : 0;
+
+          await fastify.eventService.logIncidentResolved(
+            user.id,
+            parseInt(id),
+            existingIncident.propertyId,
+            existingIncident.incidentType,
+            resolutionTime,
+            fastify.getEventMetadata(request)
+          );
+        }
+
         return incident;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -702,6 +763,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         const result = await incidentService.deleteIncident(parseInt(id));
+
         return result;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -818,6 +880,26 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           parseInt(id),
           images,
         );
+
+        // ✅ MEDIUM PRIORITY EVENT: Log image uploads for processing
+        setImmediate(async () => {
+          try {
+            const imageEvents = images.map(img =>
+              fastify.eventService.logIncidentImageUploaded(
+                user.id,
+                parseInt(id),
+                existingIncident.propertyId,
+                img.imageUrl,
+                fastify.getEventMetadata(request)
+              )
+            );
+
+            await Promise.all(imageEvents);
+          } catch (error) {
+            fastify.log.error('Failed to log incident image upload events:', error);
+          }
+        });
+
         return result;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -959,6 +1041,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         parsedPropertyId,
         !parsedPropertyId ? propertyIds : undefined,
       );
+
       return stats;
     },
   });
@@ -1137,6 +1220,14 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             images: incidentData.images,
           });
         }
+
+        // ✅ HIGH PRIORITY EVENT: Log incident created for business tracking
+        fastify.logHighPriorityEvent('incident_created', request, {
+          incidentId: incident.id,
+          propertyId: incident.propertyId,
+          incidentType: incident.incidentType,
+          severity: incident.severity
+        });
 
         reply.code(201);
         return incident;

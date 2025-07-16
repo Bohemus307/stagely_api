@@ -9,7 +9,8 @@ export const TableNames = {
   CONVERSATIONS: 'stagely-conversations',
   MESSAGES: 'stagely-messages',
   CONNECTIONS: 'stagely-connections',
-  MESSAGE_READ_RECEIPTS: 'stagely-message-read-receipts'
+  MESSAGE_READ_RECEIPTS: 'stagely-message-read-receipts',
+  EVENTS: 'stagely-events'
 };
 
 /**
@@ -134,6 +135,61 @@ export const TableDefinitions = {
       }
     ],
     pointInTimeRecovery: true,
+    removalPolicy: 'DESTROY' // Change to RETAIN for production
+  },
+
+  // Events Table
+  EVENTS: {
+    tableName: TableNames.EVENTS,
+    partitionKey: {
+      name: 'eventId',
+      type: AttributeType.STRING
+    },
+    sortKey: {
+      name: 'timestamp',
+      type: AttributeType.NUMBER
+    },
+    billingMode: BillingMode.PAY_PER_REQUEST,
+    globalSecondaryIndexes: [
+      {
+        indexName: 'userId-timestamp-index',
+        partitionKey: {
+          name: 'userId',
+          type: AttributeType.NUMBER
+        },
+        sortKey: {
+          name: 'timestamp',
+          type: AttributeType.NUMBER
+        },
+        projectionType: ProjectionType.ALL
+      },
+      {
+        indexName: 'eventType-timestamp-index',
+        partitionKey: {
+          name: 'eventType',
+          type: AttributeType.STRING
+        },
+        sortKey: {
+          name: 'timestamp',
+          type: AttributeType.NUMBER
+        },
+        projectionType: ProjectionType.ALL
+      },
+      {
+        indexName: 'category-timestamp-index',
+        partitionKey: {
+          name: 'category',
+          type: AttributeType.STRING
+        },
+        sortKey: {
+          name: 'timestamp',
+          type: AttributeType.NUMBER
+        },
+        projectionType: ProjectionType.ALL
+      }
+    ],
+    pointInTimeRecovery: true,
+    stream: StreamViewType.NEW_AND_OLD_IMAGES, // For real-time updates
     removalPolicy: 'DESTROY' // Change to RETAIN for production
   }
 };

@@ -195,9 +195,11 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
+        const startTime = Date.now();
         const inspection = await inspectionService.getInspectionById(
           parseInt(id),
         );
+        const duration = Date.now() - startTime;
 
         // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
@@ -219,6 +221,13 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this inspection",
           );
         }
+
+        // ✅ CRITICAL EVENT: Log inspection viewed for mobile app prefetching
+        fastify.logCriticalEvent('inspection_viewed', request, {
+          inspectionId: inspection.id,
+          propertyId: inspection.propertyId,
+          inspectionTitle: inspection.title
+        });
 
         return inspection;
       } catch (err) {
@@ -272,6 +281,13 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
 
         const inspection =
           await inspectionService.createInspection(inspectionData);
+
+        // ✅ HIGH PRIORITY EVENT: Log inspection created for business tracking
+        fastify.logHighPriorityEvent('inspection_created', request, {
+          inspectionId: inspection.id,
+          propertyId: inspection.propertyId,
+          inspectionTitle: inspection.title
+        });
 
         reply.code(201);
         return inspection;
@@ -358,6 +374,20 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           updateData,
         );
 
+        // ✅ CRITICAL EVENT: Check if inspection was completed
+        if (updateData.status === 'COMPLETED' || updateData.completed === true) {
+          // Get photo count for the completion event
+          const inspectionWithPhotos = await inspectionService.getInspectionById(parseInt(id));
+          const photoCount = inspectionWithPhotos.photos?.length || 0;
+
+          fastify.logCriticalEvent('inspection_completed', request, {
+            inspectionId: parseInt(id),
+            propertyId: existingInspection.propertyId,
+            inspectionTitle: existingInspection.title,
+            photoCount
+          });
+        }
+
         return updatedInspection;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -442,6 +472,15 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         await inspectionService.deleteInspection(parseInt(id));
+
+        // ✅ HIGH PRIORITY EVENT: Log inspection deleted for business tracking
+        await fastify.eventService.logInspectionDeleted(
+          user.id,
+          existingInspection.id,
+          existingInspection.propertyId,
+          existingInspection.title,
+          fastify.getEventMetadata(request)
+        );
 
         return { success: true, id: parseInt(id) };
       } catch (err) {
@@ -538,6 +577,16 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           ...imageData,
           inspectionId: parseInt(id),
         });
+
+        // ✅ MEDIUM PRIORITY EVENT: Log inspection photo uploaded
+        await fastify.eventService.logInspectionPhotoUploaded(
+          user.id,
+          parseInt(id),
+          existingInspection.propertyId,
+          imageData.imageUrl,
+          imageData.spaceType,
+          fastify.getEventMetadata(request)
+        );
 
         reply.code(201);
         return uploadedImage;
@@ -644,6 +693,17 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         const uploadedImages = await inspectionService.bulkUploadImages(
           parseInt(id),
           images,
+        );
+
+          // ✅ MEDIUM PRIORITY EVENT: Log bulk photos uploaded for progress tracking
+        const uploadedBytes = images.length * 2000000; // Rough estimate: 2MB per image
+        await fastify.eventService.logInspectionBulkPhotosUploaded(
+          user.id,
+          parseInt(id),
+          existingInspection.propertyId,
+          images.length,
+          uploadedBytes,
+          fastify.getEventMetadata(request)
         );
 
         reply.code(201);
@@ -1062,6 +1122,7 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         const stats = await inspectionService.getPropertyInspectionStats(
           parseInt(propertyId),
         );
+
         return stats;
       } catch (err) {
         if (err instanceof NotFoundError) {

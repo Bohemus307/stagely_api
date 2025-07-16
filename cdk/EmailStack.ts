@@ -1,4 +1,3 @@
-// src/cdk/EmailStack.ts
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as ses from "aws-cdk-lib/aws-ses";
@@ -26,7 +25,7 @@ export class EmailStack extends cdk.Stack {
       }
     );
 
-    // Create an IAM role for sending emails
+    // Create an IAM role 
     const sesRole = new iam.Role(this, `${APP_NAME}-SESRole`, {
       assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
       description: `Role for sending emails via SES for ${APP_NAME}`,

@@ -1,7 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { PropertyStatus } from "@prisma/client";
 import { NotFoundError } from "../../utils/errors";
-
 import {
   sendNotFound,
   sendConflict,
@@ -211,6 +210,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       };
 
       const result = await propertyService.getProperties(queryParams);
+
       return result;
     },
   });
@@ -253,6 +253,8 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const property = await propertyService.getPropertyById(parseInt(id));
+        const startTime = Date.now();
+        const duration = Date.now() - startTime;
 
         // Verify property belongs to authenticated user
         const user = await fastify.prisma.user.findUnique({
@@ -265,6 +267,12 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this property",
           );
         }
+
+        // ✅ CRITICAL EVENT: Log property viewed for mobile app prefetching
+        fastify.logCriticalEvent('property_viewed', request, {
+          propertyId: property.id,
+          propertyAddress: property.address
+        });
 
         return property;
       } catch (err) {
@@ -321,6 +329,13 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           request.body as any,
           user.id,
         );
+
+        // ✅ HIGH PRIORITY EVENT: Log property created for business tracking
+        fastify.logHighPriorityEvent('property_created', request, {
+          propertyId: property.id,
+          propertyAddress: property.address,
+          propertyType: (request.body as any).type
+        });
 
         reply.code(201);
         return property;
@@ -395,9 +410,10 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
+        const updateData = request.body as any;
         const property = await propertyService.updateProperty(
           parseInt(id),
-          request.body as any,
+          updateData,
         );
 
         return property;
@@ -481,6 +497,30 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           status,
         );
 
+        // ✅ HIGH PRIORITY EVENTS: Specific status change events
+        setImmediate(async () => {
+          try {
+            if (status === PropertyStatus.Archived) {
+              await fastify.eventService.logPropertyArchived(
+                user.id,
+                property.id,
+                property.address,
+                fastify.getEventMetadata(request)
+              );
+            } else if (existingProperty.status === PropertyStatus.Archived) {
+              // If previous status was Archived and new status is anything else, it's restored
+              await fastify.eventService.logPropertyRestored(
+                user.id,
+                property.id,
+                property.address,
+                fastify.getEventMetadata(request)
+              );
+            }
+          } catch (error) {
+            fastify.log.error('Failed to log property status change event:', error);
+          }
+        });
+
         return property;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -553,6 +593,14 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
 
         await propertyService.deleteProperty(parseInt(id));
 
+          // ✅ HIGH PRIORITY EVENT: Property deleted (business critical)
+        await fastify.eventService.logPropertyDeleted(
+          user.id,
+          existingProperty.id,
+          existingProperty.address,
+          fastify.getEventMetadata(request)
+        );
+
         return { success: true, id: parseInt(id) };
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -597,6 +645,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const stats = await propertyService.getUserPropertyStats(user.id);
+
       return stats;
     },
   });
@@ -676,6 +725,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         const spaces = await propertyService.getPropertySpaces(parseInt(id));
+
         return spaces;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -760,6 +810,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         const inspections = await propertyService.getPropertyInspections(
           parseInt(id),
         );
+
         return inspections;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -847,6 +898,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         const incidents = await propertyService.getPropertyIncidents(
           parseInt(id),
         );
+
         return incidents;
       } catch (err) {
         if (err instanceof NotFoundError) {

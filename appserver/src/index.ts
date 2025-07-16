@@ -19,6 +19,7 @@ import s3Plugin from "./plugins/s3Plugin";
 import dynamoDB from "./plugins/dynamoDB";
 import emailPlugin from "./plugins/emailPlugin";
 import inviteRoutes from "./routes/users/invite";
+import eventServicePlugin from './plugins/eventService';
 
 // Load environment variables from .env file
 config();
@@ -170,6 +171,7 @@ server.register(require("@fastify/swagger"), {
       { name: "users", description: "Creation and management of users" },
       { name: "messaging", description: "Creation and management of messages" },
       { name: "invite", description: "Invite new Users" },
+      { name: "event", description: "Events Store" },
     ],
     securityDefinitions: {
       bearerAuth: {
@@ -205,6 +207,7 @@ server.register(healthPlugin);
 server.register(s3Plugin);
 server.register(dynamoDB);
 server.register(emailPlugin);
+server.register(eventServicePlugin);
 
 server.register(auth0Plugin, {
   domain: serverConfig.DOMAIN,
@@ -216,6 +219,8 @@ server.register(autoLoad, {
   dirNameRoutePrefix: true,
 });
 server.register(inviteRoutes, { prefix: "/users" });
+server.register(require('./routes/events'), { prefix: '/events' });
+
 const start = async () => {
   try {
     // Add hooks for performance monitoring

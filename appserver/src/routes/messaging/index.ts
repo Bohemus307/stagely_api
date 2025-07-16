@@ -105,10 +105,6 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
       });
 
       if (!user || user.auth0Id !== request?.user?.sub) {
-        console.log('Auth mismatch:', {
-          userAuth0Id: user?.auth0Id,
-          tokenSub: request?.user?.sub
-        });
         return reply.code(401).send({
           success: false,
           error: "User not found or not authorized"
@@ -121,26 +117,25 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         initialMessage
       );
 
-      return {
-        success: true,
-        conversation: result.conversation,
-        message: result.message || null
-      };
-    } catch (err: any) {
-      console.log('=== ERROR IN CREATE CONVERSATION ===');
-      console.log('Error type:', typeof err);
-      console.log('Error constructor:', err.constructor.name);
-      console.log('Error message:', err.message);
-      console.log('Error stack:', err.stack);
-      console.log('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      // ✅ HIGH PRIORITY EVENT: Log conversation created for business tracking
+        fastify.logHighPriorityEvent('conversation_created', request, {
+          conversationId: result.conversation.conversationId,
+          participantCount: participants.length,
+          conversationType: "general",
+          hasInitialMessage: !!initialMessage
+        });
 
-      fastify.log.error('Create conversation error:', err);
-
-      const errorMessage = err instanceof Error ? err.message : String(err);
-
-      reply.code(500).send({
-        success: false,
-        error: errorMessage
+        return {
+          success: true,
+          conversation: result.conversation,
+          message: result.message || null
+        };
+      } catch (err: any) {
+        fastify.log.error('Create conversation error:', err);
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        reply.code(500).send({
+          success: false,
+          error: errorMessage
         });
       }
     }
@@ -473,7 +468,42 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             text
           );
 
-          console.log("MESSAGE SENT:", JSON.stringify(message, null, 2));
+          // Get conversation for recipient info
+          const conversation = await messagingService.getConversationById(
+            conversationId,
+            user.id
+          );
+
+           // ✅ HIGH PRIORITY EVENTS: Log message sent and received
+          const recipientCount = conversation.participants.length - 1; // Recipients excluding sender
+
+          // Log message sent event for sender
+          fastify.logHighPriorityEvent('message_sent', request, {
+            messageId: message.messageId,
+            conversationId: conversationId,
+            recipientCount: recipientCount,
+            textLength: text.length
+          });
+
+          // Log message received events for each recipient
+          setImmediate(async () => {
+            try {
+              const recipients = conversation.participants.filter(id => id !== user.id);
+              const receiveEvents = recipients.map(recipientId =>
+                fastify.eventService.logMessageReceived(
+                  recipientId,
+                  message.messageId,
+                  conversationId,
+                  user.id,
+                  fastify.getEventMetadata(request)
+                )
+              );
+
+              await Promise.all(receiveEvents);
+            } catch (error) {
+              fastify.log.error('Failed to log message received events:', error);
+            }
+          });
 
           return {
             success: true,

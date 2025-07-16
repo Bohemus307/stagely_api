@@ -36,7 +36,6 @@ export class MessagingStack extends cdk.Stack {
       stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
     });
 
-    // Add GSIs to Conversations table
 
     this.conversationsTable.addGlobalSecondaryIndex({
       indexName: 'participant-index',
@@ -51,7 +50,6 @@ export class MessagingStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
-    // Create the Messages table
     this.messagesTable = new dynamodb.Table(this, `${APP_NAME}-MessagesTable`, {
       tableName: `${TableNames.MESSAGES}-${props.deploymentEnv}`,
       partitionKey: {
@@ -68,7 +66,6 @@ export class MessagingStack extends cdk.Stack {
       stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
     });
 
-    // Add GSIs to Messages table
     this.messagesTable.addGlobalSecondaryIndex({
       indexName: 'conversationId-timestamp-index',
       partitionKey: {
@@ -95,7 +92,6 @@ export class MessagingStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
-    // Create the Connections table to get userID
     this.connectionsTable = new dynamodb.Table(this, `${APP_NAME}-ConnectionsTable`, {
       tableName: `${TableNames.CONNECTIONS}-${props.deploymentEnv}`,
       partitionKey: {
@@ -107,7 +103,6 @@ export class MessagingStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY // Always DESTROY for connection data
     });
 
-    // Add GSI to Connections table
     this.connectionsTable.addGlobalSecondaryIndex({
       indexName: 'userId-index',
       partitionKey: {
@@ -117,7 +112,6 @@ export class MessagingStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
-    // Create the Message Read Receipts table
     this.messageReadReceiptsTable = new dynamodb.Table(this, `${APP_NAME}-MessageReadReceiptsTable`, {
       tableName: `${TableNames.MESSAGE_READ_RECEIPTS}-${props.deploymentEnv}`,
       partitionKey: {
@@ -129,7 +123,6 @@ export class MessagingStack extends cdk.Stack {
       removalPolicy: removalPolicy
     });
 
-    // Add GSI to Message Read Receipts table
     this.messageReadReceiptsTable.addGlobalSecondaryIndex({
       indexName: 'conversationId-userId-index',
       partitionKey: {
@@ -143,7 +136,6 @@ export class MessagingStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL
     });
 
-    // Output the table names
 
     new cdk.CfnOutput(this, 'ConversationsTableName', {
       value: this.conversationsTable.tableName,
