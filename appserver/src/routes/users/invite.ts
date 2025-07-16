@@ -186,8 +186,8 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Accept the invitation (convert placeholder to real user)
         const result = await invitationService.acceptInvitation(
-          currentUser.id,
-          token
+          token,
+          currentUser
         );
 
         // ✅ HIGH PRIORITY EVENT: Log invitation acceptance for conversion tracking
