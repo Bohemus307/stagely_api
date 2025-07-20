@@ -541,22 +541,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
               getEventMetadata(request)
             );
 
-            // Log specific status change events (keep existing logic)
-            if (status === PropertyStatus.Archived) {
-              await eventService.logPropertyArchived(
-                user.id,
-                property.id,
-                property.address,
-                getEventMetadata(request)
-              );
-            } else if (existingProperty.status === PropertyStatus.Archived) {
-              await eventService.logPropertyRestored(
-                user.id,
-                property.id,
-                property.address,
-                getEventMetadata(request)
-              );
-            }
           } catch (error) {
             fastify.log.error('Failed to log property status change events:', error);
           }

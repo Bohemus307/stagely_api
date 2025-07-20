@@ -16,7 +16,7 @@ export class EventsStack extends cdk.Stack {
 
     // Get environment-specific settings
     const isProd = props.deploymentEnv === "production";
-    const removalPolicy = isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    const removalPolicy = cdk.RemovalPolicy.DESTROY;
 
     // Events table
     this.eventsTable = new dynamodb.Table(this, `${APP_NAME}-EventsTable`, {
