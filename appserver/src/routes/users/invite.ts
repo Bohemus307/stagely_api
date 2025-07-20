@@ -92,16 +92,6 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
           `${currentUser.firstName} ${currentUser.lastName}`
         );
 
-         // ✅ HIGH PRIORITY EVENT: Log invitation sent (only for new invitations)
-        if (result.isNewInvitation) {
-          await fastify.eventService.logUserInvitationSent(
-            currentUser.id,
-            email,
-            currentUser.id,
-            fastify.getEventMetadata(request)
-          );
-        }
-
         return {
           success: true,
           user: result.user,
@@ -188,14 +178,6 @@ async function inviteRoutes(fastify: FastifyInstance): Promise<void> {
         const result = await invitationService.acceptInvitation(
           token,
           currentUser
-        );
-
-        // ✅ HIGH PRIORITY EVENT: Log invitation acceptance for conversion tracking
-        await fastify.eventService.logUserInvitationAccepted(
-          currentUser.id,
-          currentUser.email,
-          token,
-          fastify.getEventMetadata(request)
         );
 
         return {
