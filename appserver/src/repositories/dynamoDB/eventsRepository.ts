@@ -11,8 +11,6 @@ import { v4 as uuidv4 } from "uuid";
 
 // Event Categories
 export enum EventCategory {
-    USER = 'user',
-    MESSAGING = 'messaging',
     PROPERTY = 'property',
     INCIDENT = 'incident',
     INSPECTION = 'inspection'
@@ -20,49 +18,26 @@ export enum EventCategory {
 
 // Event Types
 export enum EventType {
-    //Users
-    USER_LOGIN = 'user_login',
-    USER_CREATED = 'user_created',
-    USER_INVITATION_SENT = 'user_invitation_sent',
-    USER_INVITATION_ACCEPTED = 'user_invitation_accepted',
-
-    // Messaging Events
-    MESSAGE_SENT = 'message_sent',
-    MESSAGE_RECEIVED = 'message_received',
-    MESSAGE_READ = 'message_read',
-    CONVERSATION_CREATED = 'conversation_created',
-    CONVERSATION_JOINED = 'conversation_joined',
-    CONVERSATION_LEFT = 'conversation_left',
-
 
     // Property Events
-    PROPERTY_CREATED = 'property_created',
-    PROPERTY_DELETED = 'property_deleted',
     PROPERTY_VIEWED = 'property_viewed',
-    PROPERTY_ARCHIVED = 'property_archived',
-    PROPERTY_RESTORED = 'property_restored',
+    PROPERTY_UPDATED = 'property_updated',
+    PROPERTY_STATUS_CHANGED = 'property_status_changed',
+    PROPERTY_STATS_VIEWED = 'property_stats_viewed',
 
     // Incident Events
-    INCIDENT_CREATED = 'incident_created',
-    INCIDENT_RESOLVED = 'incident_resolved',
     INCIDENT_VIEWED = 'incident_viewed',
+    INCIDENT_UPDATED = 'incident_updated',
     INCIDENT_STATUS_CHANGED = 'incident_status_changed',
     INCIDENT_SEVERITY_CHANGED = 'incident_severity_changed',
     INCIDENT_IMAGE_UPLOADED = 'incident_image_uploaded',
-    INCIDENT_IMAGE_DELETED = 'incident_image_deleted',
-    INCIDENT_CLASSIFIED = 'incident_classified',
 
     //Inspection Events
-    INSPECTION_CREATED = 'inspection_created',
     INSPECTION_COMPLETED = 'inspection_completed',
-    INSPECTION_DELETED = 'inspection_deleted',
     INSPECTION_VIEWED = 'inspection_viewed',
+    INSPECTION_UPDATED = 'inspection_updated',
     INSPECTION_PHOTO_UPLOADED = 'inspection_photo_uploaded',
-    INSPECTION_PHOTO_DELETED = 'inspection_photo_deleted',
-    INSPECTION_PHOTO_CLASSIFIED = 'inspection_photo_classified',
-    INSPECTION_BULK_PHOTOS_UPLOADED = 'inspection_bulk_photos_uploaded',
-    INSPECTION_PHOTO_UPDATED = 'inspection_photo_updated',
-    INSPECTION_STATS_VIEWED = 'inspection_stats_viewed'
+    INSPECTION_BULK_PHOTOS_UPLOADED = 'inspection_bulk_photos_uploaded'
 }
 
 export interface EventMetadata {

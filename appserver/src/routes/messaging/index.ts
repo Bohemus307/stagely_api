@@ -117,14 +117,6 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         initialMessage
       );
 
-      // ✅ HIGH PRIORITY EVENT: Log conversation created for business tracking
-        fastify.logHighPriorityEvent('conversation_created', request, {
-          conversationId: result.conversation.conversationId,
-          participantCount: participants.length,
-          conversationType: "general",
-          hasInitialMessage: !!initialMessage
-        });
-
         return {
           success: true,
           conversation: result.conversation,
@@ -473,37 +465,6 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             conversationId,
             user.id
           );
-
-           // ✅ HIGH PRIORITY EVENTS: Log message sent and received
-          const recipientCount = conversation.participants.length - 1; // Recipients excluding sender
-
-          // Log message sent event for sender
-          fastify.logHighPriorityEvent('message_sent', request, {
-            messageId: message.messageId,
-            conversationId: conversationId,
-            recipientCount: recipientCount,
-            textLength: text.length
-          });
-
-          // Log message received events for each recipient
-          setImmediate(async () => {
-            try {
-              const recipients = conversation.participants.filter(id => id !== user.id);
-              const receiveEvents = recipients.map(recipientId =>
-                fastify.eventService.logMessageReceived(
-                  recipientId,
-                  message.messageId,
-                  conversationId,
-                  user.id,
-                  fastify.getEventMetadata(request)
-                )
-              );
-
-              await Promise.all(receiveEvents);
-            } catch (error) {
-              fastify.log.error('Failed to log message received events:', error);
-            }
-          });
 
           return {
             success: true,

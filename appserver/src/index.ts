@@ -19,7 +19,7 @@ import s3Plugin from "./plugins/s3Plugin";
 import dynamoDB from "./plugins/dynamoDB";
 import emailPlugin from "./plugins/emailPlugin";
 import inviteRoutes from "./routes/users/invite";
-import eventServicePlugin from './plugins/eventService';
+
 
 // Load environment variables from .env file
 config();
@@ -207,7 +207,6 @@ server.register(healthPlugin);
 server.register(s3Plugin);
 server.register(dynamoDB);
 server.register(emailPlugin);
-server.register(eventServicePlugin);
 
 server.register(auth0Plugin, {
   domain: serverConfig.DOMAIN,

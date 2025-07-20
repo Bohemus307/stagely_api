@@ -1,5 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { EventType, EventCategory } from '../repositories/dynamoDB/eventsRepository';
+import { EventService } from '../services/eventService';
+import { DynamoDBEventRepository } from '../repositories/dynamoDB/eventsRepository';
+import { UserRepository } from '../repositories/userRepository';
+import { getEventMetadata } from '../utils/eventHelpers';
 
 // Request/Response schemas for Fastify
 const eventQuerySchema = {
@@ -54,6 +58,13 @@ const eventResponseSchema = {
 };
 
 async function eventRoutes(fastify: FastifyInstance) {
+  const eventService = new EventService(
+  new DynamoDBEventRepository(
+    fastify.dynamoDB.documentClient,
+    process.env.NODE_ENV || 'staging'
+  ),
+  new UserRepository(fastify.prisma)
+);
   // Add authentication preHandler
   fastify.addHook('preHandler', fastify.authenticate);
 
@@ -98,7 +109,7 @@ async function eventRoutes(fastify: FastifyInstance) {
       const parsedLimit = parseInt(limit as string);
       const parsedLastEvaluatedKey = lastEvaluatedKey ? JSON.parse(lastEvaluatedKey as string) : undefined;
 
-      const result = await fastify.eventService.getEventsWithFilters(
+      const result = await eventService.getEventsWithFilters(
         userId,
         parsedEventTypes,
         parsedCategories,
@@ -170,7 +181,7 @@ async function eventRoutes(fastify: FastifyInstance) {
       const parsedLimit = parseInt(limit as string);
       const parsedLastEvaluatedKey = lastEvaluatedKey ? JSON.parse(lastEvaluatedKey as string) : undefined;
 
-      const result = await fastify.eventService.getEventsForUser(
+      const result = await eventService.getEventsForUser(
         parseInt(userId),
         parsedLimit,
         parsedLastEvaluatedKey,
@@ -240,7 +251,7 @@ async function eventRoutes(fastify: FastifyInstance) {
       const parsedLimit = parseInt(limit as string);
       const parsedLastEvaluatedKey = lastEvaluatedKey ? JSON.parse(lastEvaluatedKey as string) : undefined;
 
-      const result = await fastify.eventService.getEventsByType(
+      const result = await eventService.getEventsByType(
         eventType as EventType,
         parsedLimit,
         parsedLastEvaluatedKey,
@@ -310,7 +321,7 @@ async function eventRoutes(fastify: FastifyInstance) {
       const parsedLimit = parseInt(limit as string);
       const parsedLastEvaluatedKey = lastEvaluatedKey ? JSON.parse(lastEvaluatedKey as string) : undefined;
 
-      const result = await fastify.eventService.getEventsByCategory(
+      const result = await eventService.getEventsByCategory(
         category as EventCategory,
         parsedLimit,
         parsedLastEvaluatedKey,
@@ -393,7 +404,7 @@ async function eventRoutes(fastify: FastifyInstance) {
         relatedEntityType
       } = body;
 
-      const event = await fastify.eventService.createEvent(
+      const event = await eventService.createEvent(
         userId,
         eventType,
         title,
@@ -503,7 +514,7 @@ fastify.get('/recent', {
     // Get events from last 24 hours
     const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
 
-    const result = await fastify.eventService.getEventsForUser(
+    const result = await eventService.getEventsForUser(
       userId,
       limit,
       undefined,
@@ -542,7 +553,7 @@ fastify.post('/test', {
         eventType: {
           type: 'string',
           enum: Object.values(EventType),
-          default: EventType.USER_LOGIN
+          default: EventType.PROPERTY_VIEWED
         },
         title: { type: 'string', default: 'Test Event' },
         description: { type: 'string', default: 'Testing event creation' },
@@ -572,15 +583,15 @@ fastify.post('/test', {
 
     const body = request.body as any;
     const {
-      eventType = EventType.USER_LOGIN,
+      eventType = EventType.PROPERTY_VIEWED,
       title = 'Test Event',
       description = 'Testing event creation',
       payload = { test: true, timestamp: new Date().toISOString() }
     } = body;
 
-    const metadata = fastify.getEventMetadata(request);
+    const metadata = getEventMetadata(request);
 
-    const event = await fastify.eventService.createEvent(
+    const event = await eventService.createEvent(
       userId,
       eventType,
       title,

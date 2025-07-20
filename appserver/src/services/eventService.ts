@@ -21,48 +21,27 @@ export class EventService {
      */
     private getCategoryForEventType(eventType: EventType): EventCategory {
         const categoryMap: Record<EventType, EventCategory> = {
-            // User events
-            [EventType.USER_LOGIN]: EventCategory.USER,
-            [EventType.USER_CREATED]: EventCategory.USER,
-            [EventType.USER_INVITATION_SENT]: EventCategory.USER,
-            [EventType.USER_INVITATION_ACCEPTED]: EventCategory.USER,
-
-            // Messaging events
-            [EventType.MESSAGE_SENT]: EventCategory.MESSAGING,
-            [EventType.MESSAGE_RECEIVED]: EventCategory.MESSAGING,
-            [EventType.MESSAGE_READ]: EventCategory.MESSAGING,
-            [EventType.CONVERSATION_CREATED]: EventCategory.MESSAGING,
-            [EventType.CONVERSATION_JOINED]: EventCategory.MESSAGING,
-            [EventType.CONVERSATION_LEFT]: EventCategory.MESSAGING,
 
             // Property events
-            [EventType.PROPERTY_CREATED]: EventCategory.PROPERTY,
-            [EventType.PROPERTY_DELETED]: EventCategory.PROPERTY,
             [EventType.PROPERTY_VIEWED]: EventCategory.PROPERTY,
-            [EventType.PROPERTY_ARCHIVED]: EventCategory.PROPERTY,
-            [EventType.PROPERTY_RESTORED]: EventCategory.PROPERTY,
+            [EventType.PROPERTY_UPDATED]: EventCategory.PROPERTY,
+            [EventType.PROPERTY_STATUS_CHANGED]: EventCategory.PROPERTY,
+            [EventType.PROPERTY_STATS_VIEWED]: EventCategory.PROPERTY,
 
             // Incident events
-            [EventType.INCIDENT_CREATED]: EventCategory.INCIDENT,
-            [EventType.INCIDENT_RESOLVED]: EventCategory.INCIDENT,
             [EventType.INCIDENT_VIEWED]: EventCategory.INCIDENT,
+            [EventType.INCIDENT_UPDATED]: EventCategory.INCIDENT,
             [EventType.INCIDENT_STATUS_CHANGED]: EventCategory.INCIDENT,
             [EventType.INCIDENT_SEVERITY_CHANGED]: EventCategory.INCIDENT,
             [EventType.INCIDENT_IMAGE_UPLOADED]: EventCategory.INCIDENT,
-            [EventType.INCIDENT_IMAGE_DELETED]: EventCategory.INCIDENT,
-            [EventType.INCIDENT_CLASSIFIED]: EventCategory.INCIDENT,
 
             // Inspection events
-            [EventType.INSPECTION_CREATED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_COMPLETED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_DELETED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_VIEWED]: EventCategory.INSPECTION,
+            [EventType.INSPECTION_UPDATED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_PHOTO_UPLOADED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_PHOTO_DELETED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_PHOTO_CLASSIFIED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_BULK_PHOTOS_UPLOADED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_PHOTO_UPDATED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_STATS_VIEWED]: EventCategory.INSPECTION,
+
         };
 
         return categoryMap[eventType];
@@ -343,131 +322,27 @@ export class EventService {
     // HIGH PRIORITY EVENT METHODS
     // ===========================================
 
-    /**
-     * HIGH: Log user login - security and analytics
-     */
-    async logUserLogin(
-        userId: number,
-        email: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.USER_LOGIN,
-            'User Login',
-            `User ${email} logged in`,
-            {
-                email,
-                loginTime: new Date().toISOString(),
-                deviceInfo: metadata?.deviceId ? { deviceId: metadata.deviceId } : undefined
-            },
-            metadata
-        );
-    }
 
     /**
-     * HIGH: Log user created - user lifecycle tracking
-     */
-    async logUserCreated(
-        userId: number,
-        email: string,
-        firstName: string,
-        lastName: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.USER_CREATED,
-            'User Created',
-            `New user ${firstName} ${lastName} joined the platform`,
-            {
-                email,
-                firstName,
-                lastName,
-                registrationTime: new Date().toISOString(),
-                registrationMethod: 'direct' // Could be 'invitation' if applicable
-            },
-            metadata,
-            userId.toString(),
-            'user'
-        );
-    }
-
-    /**
-     * HIGH: Log user invitation sent - growth tracking
-     */
-    async logUserInvitationSent(
-        userId: number,
-        invitedEmail: string,
-        invitedByUserId: number,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.USER_INVITATION_SENT,
-            'User Invitation Sent',
-            `User invitation sent to ${invitedEmail}`,
-            {
-                invitedEmail,
-                invitedByUserId,
-                invitationTime: new Date().toISOString()
-            },
-            metadata,
-            userId.toString(),
-            'user'
-        );
-    }
-
-    /**
-     * HIGH: Log user invitation accepted - conversion tracking
-     */
-    async logUserInvitationAccepted(
-        userId: number,
-        email: string,
-        invitationToken: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.USER_INVITATION_ACCEPTED,
-            'User Invitation Accepted',
-            `User ${email} accepted invitation`,
-            {
-                email,
-                invitationToken: invitationToken.substring(0, 8) + '...', // Don't log full token
-                acceptedTime: new Date().toISOString()
-            },
-            metadata,
-            userId.toString(),
-            'user'
-        );
-    }
-    
-     /**
-     * HIGH: Log property created - onboarding workflow
-     */
-    async logPropertyCreated(
+ * Log when a property is updated (general updates)
+ */
+    async logPropertyUpdated(
         userId: number,
         propertyId: number,
         propertyAddress: string,
-        propertyType?: string,
+        changedFields: string[],
         metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
-            EventType.PROPERTY_CREATED,
-            'Property Created',
-            `Property ${propertyAddress} created`,
+            EventType.PROPERTY_UPDATED,
+            'Property Updated',
+            `Property "${propertyAddress}" was updated`,
             {
                 propertyId,
                 propertyAddress,
-                propertyType,
-                timestamp: new Date().toISOString(),
-                // Sync hints for mobile app
-                syncHints: {
-                    refreshPropertyList: true,
-                    updateUserStats: true
-                }
+                changedFields,
+                timestamp: new Date().toISOString()
             },
             metadata,
             propertyId.toString(),
@@ -476,126 +351,25 @@ export class EventService {
     }
 
     /**
-     * HIGH: Log property deleted - data cleanup
+     * Log when an incident is updated (general updates)
      */
-    async logPropertyDeleted(
-        userId: number,
-        propertyId: number,
-        propertyAddress: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.PROPERTY_DELETED,
-            'Property Deleted',
-            `Property ${propertyAddress} deleted`,
-            {
-                propertyId,
-                propertyAddress,
-                timestamp: new Date().toISOString(),
-                // Cleanup hints
-                cleanupHints: {
-                    removeFromCache: true,
-                    cleanupRelatedData: true,
-                    updateUserStats: true
-                }
-            },
-            metadata,
-            propertyId.toString(),
-            'property'
-        );
-    }
-
-    /**
-     * HIGH: Log property archived
-     */
-    async logPropertyArchived(
-        userId: number,
-        propertyId: number,
-        propertyAddress: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.PROPERTY_ARCHIVED,
-            'Property Archived',
-            `Property ${propertyAddress} archived`,
-            {
-                propertyId,
-                propertyAddress,
-                timestamp: new Date().toISOString(),
-                // Status change hints
-                statusChangeHints: {
-                    refreshPropertyList: true,
-                    updateUserStats: true,
-                    moveToArchived: true
-                }
-            },
-            metadata,
-            propertyId.toString(),
-            'property'
-        );
-    }
-
-    /**
-     * HIGH: Log property restored
-     */
-    async logPropertyRestored(
-        userId: number,
-        propertyId: number,
-        propertyAddress: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.PROPERTY_RESTORED,
-            'Property Restored',
-            `Property ${propertyAddress} restored from archive`,
-            {
-                propertyId,
-                propertyAddress,
-                timestamp: new Date().toISOString(),
-                // Status change hints
-                statusChangeHints: {
-                    refreshPropertyList: true,
-                    updateUserStats: true,
-                    moveFromArchived: true
-                }
-            },
-            metadata,
-            propertyId.toString(),
-            'property'
-        );
-    }
-
-    /**
-     * HIGH: Log incident created - workflow triggers
-     */
-    async logIncidentCreated(
+    async logIncidentUpdated(
         userId: number,
         incidentId: number,
         propertyId: number,
-        incidentType: string,
-        severity: string,
+        changedFields: string[],
         metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
-            EventType.INCIDENT_CREATED,
-            'Incident Created',
-            `${incidentType} incident created with ${severity} severity`,
+            EventType.INCIDENT_UPDATED,
+            'Incident Updated',
+            `Incident #${incidentId} was updated`,
             {
                 incidentId,
                 propertyId,
-                incidentType,
-                severity,
-                timestamp: new Date().toISOString(),
-                // Mobile app hints
-                syncHints: {
-                    refreshIncidentList: true,
-                    updatePropertyStats: true,
-                    sendNotifications: true
-                }
+                changedFields,
+                timestamp: new Date().toISOString()
             },
             metadata,
             incidentId.toString(),
@@ -604,66 +378,25 @@ export class EventService {
     }
 
     /**
-     * HIGH: Log incident resolved - completion tracking
+     * Log when an inspection is updated (general updates)
      */
-    async logIncidentResolved(
-        userId: number,
-        incidentId: number,
-        propertyId: number,
-        incidentType: string,
-        resolutionTime: number,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.INCIDENT_RESOLVED,
-            'Incident Resolved',
-            `${incidentType} incident resolved`,
-            {
-                incidentId,
-                propertyId,
-                incidentType,
-                resolutionTime,
-                timestamp: new Date().toISOString(),
-                // Completion hints
-                completionHints: {
-                    refreshIncidentList: true,
-                    updatePropertyStats: true,
-                    trackResolutionTime: true,
-                    sendCompletionNotifications: true
-                }
-            },
-            metadata,
-            incidentId.toString(),
-            'incident'
-        );
-    }
-
-    /**
-     * HIGH: Log inspection created - workflow triggers
-     */
-     async logInspectionCreated(
+    async logInspectionUpdated(
         userId: number,
         inspectionId: number,
         propertyId: number,
-        inspectionTitle: string,
+        changedFields: string[],
         metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
-            EventType.INSPECTION_CREATED,
-            'Inspection Created',
-            `Inspection "${inspectionTitle}" created`,
+            EventType.INSPECTION_UPDATED,
+            'Inspection Updated',
+            `Inspection #${inspectionId} was updated`,
             {
                 inspectionId,
                 propertyId,
-                inspectionTitle,
-                timestamp: new Date().toISOString(),
-                // Mobile app hints
-                syncHints: {
-                    refreshInspectionList: true,
-                    updatePropertyStats: true
-                }
+                changedFields,
+                timestamp: new Date().toISOString()
             },
             metadata,
             inspectionId.toString(),
@@ -671,142 +404,6 @@ export class EventService {
         );
     }
 
-    /**
-     * HIGH: Log inspection deleted
-     */
-    async logInspectionDeleted(
-        userId: number,
-        inspectionId: number,
-        propertyId: number,
-        inspectionTitle: string,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.INSPECTION_DELETED,
-            'Inspection Deleted',
-            `Inspection "${inspectionTitle}" deleted`,
-            {
-                inspectionId,
-                propertyId,
-                inspectionTitle,
-                timestamp: new Date().toISOString(),
-                // Cleanup hints
-                cleanupHints: {
-                    removeFromCache: true,
-                    cleanupPhotos: true,
-                    updatePropertyStats: true
-                }
-            },
-            metadata,
-            inspectionId.toString(),
-            'inspection'
-        );
-    }
-
-    // ===========================================
-    // MESSAGING EVENTS (HIGH PRIORITY)
-    // ===========================================
-
-async logMessageSent(
-    userId: number,
-    messageId: string,
-    conversationId: string,
-    textLength: number,
-    recipientCount: number,
-    metadata?: EventMetadata
-): Promise<DynamoDBEvent> {
-    return this.createEvent(
-        userId,
-        EventType.MESSAGE_SENT,
-        'Message Sent',
-        `Message sent to ${recipientCount} recipients`,
-        {
-            messageId,
-            conversationId,
-            textLength,
-            recipientCount,
-            timestamp: new Date().toISOString(),
-            // Real-time sync hints
-            syncHints: {
-                updateConversationList: true,
-                sendPushNotifications: true,
-                updateLastMessage: true
-            }
-        },
-        metadata,
-        messageId,
-        'message'
-    );
-}
-
-    /**
- * Log message received event
- */
-async logMessageReceived(
-    userId: number,
-    messageId: string,
-    conversationId: string,
-    senderId: number,
-    metadata?: EventMetadata
-): Promise<DynamoDBEvent> {
-    return this.createEvent(
-        userId,
-        EventType.MESSAGE_RECEIVED,
-        'Message Received',
-        `Message received from user ${senderId}`,
-        {
-            messageId,
-            conversationId,
-            senderId,
-            timestamp: new Date().toISOString(),
-            // Real-time sync hints
-            syncHints: {
-                updateUnreadCount: true,
-                refreshConversation: true,
-                showNotification: true
-            }
-        },
-        metadata,
-        messageId,
-        'message'
-    );
-}
-
-     /**
- * Log conversation created event
- */
-async logConversationCreated(
-    userId: number,
-    conversationId: string,
-    participantCount: number,
-    conversationType: string,
-    hasInitialMessage: boolean,
-    metadata?: EventMetadata
-): Promise<DynamoDBEvent> {
-    return this.createEvent(
-        userId,
-        EventType.CONVERSATION_CREATED,
-        'Conversation Created',
-        `${conversationType} conversation created with ${participantCount} participants`,
-        {
-            conversationId,
-            participantCount,
-            conversationType,
-            hasInitialMessage,
-            timestamp: new Date().toISOString(),
-            // Mobile app hints
-            syncHints: {
-                refreshConversationList: true,
-                updateUnreadCount: true,
-                sendNotifications: true
-            }
-        },
-        metadata,
-        conversationId,
-        'conversation'
-    );
-}
 
     // ===========================================
     // MEDIUM PRIORITY EVENTS (Keep some for completeness)
@@ -918,32 +515,70 @@ async logConversationCreated(
     }
 
     /**
-     * Log inspection stats viewed - analytics
-     */
-    async logInspectionStatsViewed(
+ *  Log property status changed - immediate UI update
+ */
+    async logPropertyStatusChanged(
         userId: number,
         propertyId: number,
-        statsType: string,
+        propertyAddress: string,
+        oldStatus: string,
+        newStatus: string,
         metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
-            EventType.INSPECTION_STATS_VIEWED,
-            'Inspection Stats Viewed',
-            `${statsType} inspection statistics viewed`,
+            EventType.PROPERTY_STATUS_CHANGED,
+            'Property Status Changed',
+            `Property status changed from ${oldStatus} to ${newStatus}`,
             {
                 propertyId,
-                statsType,
+                propertyAddress,
+                oldStatus,
+                newStatus,
                 timestamp: new Date().toISOString(),
-                // Analytics hints
-                analyticsHints: {
-                    generateReport: true,
-                    cacheStats: true,
-                    trackUsage: true
+                // UI update hints
+                uiUpdateHints: {
+                    refreshPropertyList: true,
+                    updatePropertyDetail: true,
+                    refreshDashboard: true
                 }
             },
             metadata,
             propertyId.toString(),
+            'property'
+        );
+    }
+
+    /**
+     *  Log property stats viewed - triggers prefetching
+     */
+    async logPropertyStatsViewed(
+        userId: number,
+        totalProperties: number,
+        activeProperties: number,
+        totalIncidents: number,
+        metadata?: EventMetadata
+    ): Promise<DynamoDBEvent> {
+        return this.createEvent(
+            userId,
+            EventType.PROPERTY_STATS_VIEWED,
+            'Property Stats Viewed',
+            `Viewed property statistics: ${totalProperties} properties, ${activeProperties} active, ${totalIncidents} incidents`,
+            {
+                totalProperties,
+                activeProperties,
+                totalIncidents,
+                timestamp: new Date().toISOString(),
+                // Prefetch hints for mobile app
+                prefetchHints: {
+                    propertyDetails: true,
+                    recentIncidents: true,
+                    recentInspections: true,
+                    propertyImages: true
+                }
+            },
+            metadata,
+            'property_stats',
             'property'
         );
     }

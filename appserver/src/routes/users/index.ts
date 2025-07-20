@@ -190,15 +190,6 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
         // Create the user
         const user = await userService.createUser(userData);
 
-        // ✅ HIGH PRIORITY EVENT: Log user creation for business tracking
-        await fastify.eventService.logUserCreated(
-          user.id,
-          user.email,
-          user.firstName,
-          user.lastName,
-          fastify.getEventMetadata(request)
-        );
-
         return reply.code(201).send(user);
       } catch (err) {
         if (err instanceof ConflictError) {

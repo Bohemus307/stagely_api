@@ -4,6 +4,10 @@ import { NotFoundError } from "../../../utils/errors";
 
 import { sendNotFound, sendUnauthorized } from "../../../utils/responses";
 import { IncidentService } from "../../../services/incidents";
+import { EventService } from "../../../services/eventService";
+import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
+import { UserRepository } from "../../../repositories/userRepository";
+import { getEventMetadata, getChangedFields } from "../../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -23,6 +27,14 @@ interface StatusUpdateBody {
 async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
   const incidentService = new IncidentService(fastify.prisma, fastify.s3);
+
+  const eventService = new EventService(
+        new DynamoDBEventRepository(
+            fastify.dynamoDB.documentClient,
+            process.env.NODE_ENV || 'staging'
+        ),
+        new UserRepository(fastify.prisma)
+    );
 
   // GET /incidents
   fastify.route({
@@ -366,12 +378,20 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        // ✅ CRITICAL EVENT: Log incident viewed for mobile app prefetching
-        fastify.logCriticalEvent('incident_viewed', request, {
-          incidentId: incident.id,
-          propertyId: incident.propertyId,
-          incidentType: incident.incidentType
-        });
+        // Log incident viewed for mobile app prefetching
+        setImmediate(async () => {
+      try {
+        await eventService.logIncidentViewed(
+          user.id,
+          incident.id,
+          incident.propertyId,
+          incident.incidentType,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log incident view event:', error);
+      }
+    });
 
 
         return incident;
@@ -515,27 +535,49 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           incidentData,
         );
 
-        // ✅ CRITICAL EVENTS: Log specific changes only
+        // Log specific changes only
         setImmediate(async () => {
           try {
-            // Check for status change
+            const metadata = getEventMetadata(request);
+
+            // Log status change if applicable
             if (incidentData.status && existingIncident.status !== incidentData.status) {
-              fastify.logCriticalEvent('incident_status_changed', request, {
-                incidentId: parseInt(id),
-                propertyId: existingIncident.propertyId,
-                oldStatus: existingIncident.status,
-                newStatus: incidentData.status
-              });
+              await eventService.logIncidentStatusChanged(
+                user.id,
+                parseInt(id),
+                existingIncident.propertyId,
+                existingIncident.status,
+                incidentData.status,
+                metadata
+              );
             }
 
-            // Check for severity change
+            // Log severity change if applicable
             if (incidentData.severity && existingIncident.severity !== incidentData.severity) {
-              fastify.logCriticalEvent('incident_severity_changed', request, {
-                incidentId: parseInt(id),
-                propertyId: existingIncident.propertyId,
-                oldSeverity: existingIncident.severity,
-                newSeverity: incidentData.severity
-              });
+              await eventService.logIncidentSeverityChanged(
+                user.id,
+                parseInt(id),
+                existingIncident.propertyId,
+                existingIncident.severity,
+                incidentData.severity,
+                metadata
+              );
+            }
+
+            // Log general update if other fields changed
+            const changedFields = getChangedFields(existingIncident, incident);
+            const nonCriticalFields = changedFields.filter(field =>
+              field !== 'status' && field !== 'severity'
+            );
+
+            if (nonCriticalFields.length > 0) {
+              await eventService.logIncidentUpdated(
+                user.id,
+                parseInt(id),
+                existingIncident.propertyId,
+                nonCriticalFields,
+                metadata
+              );
             }
           } catch (error) {
             fastify.log.error('Failed to log incident update events:', error);
@@ -663,28 +705,21 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           resolvedAt,
         );
 
-        // ✅ CRITICAL EVENT: Log status change
-        fastify.logCriticalEvent('incident_status_changed', request, {
-          incidentId: parseInt(id),
-          propertyId: existingIncident.propertyId,
-          oldStatus: existingIncident.status,
-          newStatus: status
-        });
-
-        // ✅ HIGH PRIORITY EVENT: Log resolution if applicable
-        if (status === IncidentStatus.Resolved || status === IncidentStatus.Closed) {
-          const resolutionTime = resolvedAt ?
-            new Date(resolvedAt).getTime() - new Date(existingIncident.reportedAt).getTime() : 0;
-
-          await fastify.eventService.logIncidentResolved(
-            user.id,
-            parseInt(id),
-            existingIncident.propertyId,
-            existingIncident.incidentType,
-            resolutionTime,
-            fastify.getEventMetadata(request)
-          );
-        }
+        // Log status change
+        setImmediate(async () => {
+      try {
+        await eventService.logIncidentStatusChanged(
+          user.id,
+          parseInt(id),
+          existingIncident.propertyId,
+          existingIncident.status,
+          status,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log incident status change events:', error);
+      }
+    });
 
         return incident;
       } catch (err) {
@@ -881,16 +916,16 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           images,
         );
 
-        // ✅ MEDIUM PRIORITY EVENT: Log image uploads for processing
+        // Log image uploads for processing
         setImmediate(async () => {
           try {
             const imageEvents = images.map(img =>
-              fastify.eventService.logIncidentImageUploaded(
+              eventService.logIncidentImageUploaded(
                 user.id,
                 parseInt(id),
                 existingIncident.propertyId,
                 img.imageUrl,
-                fastify.getEventMetadata(request)
+                getEventMetadata(request)
               )
             );
 
@@ -1220,14 +1255,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             images: incidentData.images,
           });
         }
-
-        // ✅ HIGH PRIORITY EVENT: Log incident created for business tracking
-        fastify.logHighPriorityEvent('incident_created', request, {
-          incidentId: incident.id,
-          propertyId: incident.propertyId,
-          incidentType: incident.incidentType,
-          severity: incident.severity
-        });
 
         reply.code(201);
         return incident;

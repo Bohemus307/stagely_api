@@ -11,6 +11,10 @@ import {
   updateInspectionSchema,
   uploadImageSchema,
 } from "../../../schemas/inspection-schema";
+import { EventService } from "../../../services/eventService";
+import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
+import { UserRepository } from "../../../repositories/userRepository";
+import { getEventMetadata, getChangedFields } from "../../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -30,6 +34,13 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instances with Prisma
   const inspectionService = new InspectionService(fastify.prisma);
   const propertyService = new PropertyService(fastify.prisma);
+  const eventService = new EventService(
+        new DynamoDBEventRepository(
+            fastify.dynamoDB.documentClient,
+            process.env.NODE_ENV || 'staging'
+        ),
+        new UserRepository(fastify.prisma)
+    );
 
   // GET /inspections
   fastify.route({
@@ -195,11 +206,9 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
-        const startTime = Date.now();
         const inspection = await inspectionService.getInspectionById(
           parseInt(id),
         );
-        const duration = Date.now() - startTime;
 
         // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
@@ -222,12 +231,20 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        // ✅ CRITICAL EVENT: Log inspection viewed for mobile app prefetching
-        fastify.logCriticalEvent('inspection_viewed', request, {
-          inspectionId: inspection.id,
-          propertyId: inspection.propertyId,
-          inspectionTitle: inspection.title
-        });
+        // Log inspection viewed
+        setImmediate(async () => {
+      try {
+        await eventService.logInspectionViewed(
+          user.id,
+          inspection.id,
+          inspection.propertyId,
+          inspection.title,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log inspection view:', error);
+      }
+    });
 
         return inspection;
       } catch (err) {
@@ -281,13 +298,6 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
 
         const inspection =
           await inspectionService.createInspection(inspectionData);
-
-        // ✅ HIGH PRIORITY EVENT: Log inspection created for business tracking
-        fastify.logHighPriorityEvent('inspection_created', request, {
-          inspectionId: inspection.id,
-          propertyId: inspection.propertyId,
-          inspectionTitle: inspection.title
-        });
 
         reply.code(201);
         return inspection;
@@ -376,17 +386,25 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
 
         // ✅ CRITICAL EVENT: Check if inspection was completed
         if (updateData.status === 'COMPLETED' || updateData.completed === true) {
-          // Get photo count for the completion event
-          const inspectionWithPhotos = await inspectionService.getInspectionById(parseInt(id));
-          const photoCount = inspectionWithPhotos.photos?.length || 0;
+    // Get photo count using the correct method
+    const inspectionImages = await inspectionService.getInspectionImages(parseInt(id));
+    const photoCount = inspectionImages.length;
 
-          fastify.logCriticalEvent('inspection_completed', request, {
-            inspectionId: parseInt(id),
-            propertyId: existingInspection.propertyId,
-            inspectionTitle: existingInspection.title,
-            photoCount
-          });
+    setImmediate(async () => {
+        try {
+            await eventService.logInspectionCompleted(
+                user.id,
+                parseInt(id),
+                existingInspection.propertyId,
+                existingInspection.title,
+                photoCount,
+                getEventMetadata(request)
+            );
+        } catch (error) {
+            fastify.log.error('Failed to log inspection completed event:', error);
         }
+    });
+}
 
         return updatedInspection;
       } catch (err) {
@@ -472,15 +490,6 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         }
 
         await inspectionService.deleteInspection(parseInt(id));
-
-        // ✅ HIGH PRIORITY EVENT: Log inspection deleted for business tracking
-        await fastify.eventService.logInspectionDeleted(
-          user.id,
-          existingInspection.id,
-          existingInspection.propertyId,
-          existingInspection.title,
-          fastify.getEventMetadata(request)
-        );
 
         return { success: true, id: parseInt(id) };
       } catch (err) {
@@ -578,15 +587,21 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           inspectionId: parseInt(id),
         });
 
-        // ✅ MEDIUM PRIORITY EVENT: Log inspection photo uploaded
-        await fastify.eventService.logInspectionPhotoUploaded(
+        // Log inspection photo uploaded
+        setImmediate(async () => {
+      try {
+        await eventService.logInspectionPhotoUploaded(
           user.id,
           parseInt(id),
           existingInspection.propertyId,
           imageData.imageUrl,
           imageData.spaceType,
-          fastify.getEventMetadata(request)
+          getEventMetadata(request)
         );
+      } catch (error) {
+        fastify.log.error('Failed to log inspection photo upload:', error);
+      }
+    });
 
         reply.code(201);
         return uploadedImage;
@@ -695,16 +710,22 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           images,
         );
 
-          // ✅ MEDIUM PRIORITY EVENT: Log bulk photos uploaded for progress tracking
+          // Log bulk photos uploaded for progress tracking
+        setImmediate(async () => {
+      try {
         const uploadedBytes = images.length * 2000000; // Rough estimate: 2MB per image
-        await fastify.eventService.logInspectionBulkPhotosUploaded(
+        await eventService.logInspectionBulkPhotosUploaded(
           user.id,
           parseInt(id),
           existingInspection.propertyId,
           images.length,
           uploadedBytes,
-          fastify.getEventMetadata(request)
+          getEventMetadata(request)
         );
+      } catch (error) {
+        fastify.log.error('Failed to log bulk photo upload:', error);
+      }
+    });
 
         reply.code(201);
         return {
@@ -1026,6 +1047,7 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           imageIds,
           spaceId,
         });
+
 
         return { success: true, count };
       } catch (err) {

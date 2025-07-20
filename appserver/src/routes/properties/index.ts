@@ -13,6 +13,10 @@ import {
   updatePropertySchema,
 } from "../../schemas/property-schema";
 import { PropertyService } from "../../services/properties";
+import { EventService } from "../../services/eventService";
+import { DynamoDBEventRepository } from "../../repositories/dynamoDB/eventsRepository";
+import { UserRepository } from "../../repositories/userRepository";
+import { getEventMetadata, getChangedFields } from "../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -32,6 +36,14 @@ interface StatusUpdateBody {
 async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
   const propertyService = new PropertyService(fastify.prisma);
+
+  const eventService = new EventService(
+        new DynamoDBEventRepository(
+            fastify.dynamoDB.documentClient,
+            process.env.NODE_ENV || 'staging'
+        ),
+        new UserRepository(fastify.prisma)
+    );
 
   // GET /properties/search
   fastify.route({
@@ -268,11 +280,19 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        // ✅ CRITICAL EVENT: Log property viewed for mobile app prefetching
-        fastify.logCriticalEvent('property_viewed', request, {
-          propertyId: property.id,
-          propertyAddress: property.address
-        });
+        // Log property viewed
+        setImmediate(async () => {
+      try {
+        await eventService.logPropertyViewed(
+          user.id,
+          property.id,
+          property.address,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log property view:', error);
+      }
+    });
 
         return property;
       } catch (err) {
@@ -329,13 +349,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           request.body as any,
           user.id,
         );
-
-        // ✅ HIGH PRIORITY EVENT: Log property created for business tracking
-        fastify.logHighPriorityEvent('property_created', request, {
-          propertyId: property.id,
-          propertyAddress: property.address,
-          propertyType: (request.body as any).type
-        });
 
         reply.code(201);
         return property;
@@ -415,6 +428,24 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           parseInt(id),
           updateData,
         );
+        //log property updated
+        setImmediate(async () => {
+          try {
+            const changedFields = getChangedFields(existingProperty, property);
+
+            if (changedFields.length > 0) {
+              await eventService.logPropertyUpdated(
+                user.id,
+                parseInt(id),
+                `${property.address}, ${property.city}`,
+                changedFields,
+                getEventMetadata(request)
+              );
+            }
+          } catch (error) {
+            fastify.log.error('Failed to log property updated event:', error);
+          }
+        });
 
         return property;
       } catch (err) {
@@ -497,27 +528,37 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           status,
         );
 
-        // ✅ HIGH PRIORITY EVENTS: Specific status change events
+        // Log property status change
         setImmediate(async () => {
           try {
+            // Log general status change event
+            await eventService.logPropertyStatusChanged(
+              user.id,
+              property.id,
+              `${property.address}, ${property.city}`,
+              existingProperty.status,
+              status,
+              getEventMetadata(request)
+            );
+
+            // Log specific status change events (keep existing logic)
             if (status === PropertyStatus.Archived) {
-              await fastify.eventService.logPropertyArchived(
+              await eventService.logPropertyArchived(
                 user.id,
                 property.id,
                 property.address,
-                fastify.getEventMetadata(request)
+                getEventMetadata(request)
               );
             } else if (existingProperty.status === PropertyStatus.Archived) {
-              // If previous status was Archived and new status is anything else, it's restored
-              await fastify.eventService.logPropertyRestored(
+              await eventService.logPropertyRestored(
                 user.id,
                 property.id,
                 property.address,
-                fastify.getEventMetadata(request)
+                getEventMetadata(request)
               );
             }
           } catch (error) {
-            fastify.log.error('Failed to log property status change event:', error);
+            fastify.log.error('Failed to log property status change events:', error);
           }
         });
 
@@ -593,14 +634,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
 
         await propertyService.deleteProperty(parseInt(id));
 
-          // ✅ HIGH PRIORITY EVENT: Property deleted (business critical)
-        await fastify.eventService.logPropertyDeleted(
-          user.id,
-          existingProperty.id,
-          existingProperty.address,
-          fastify.getEventMetadata(request)
-        );
-
         return { success: true, id: parseInt(id) };
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -645,6 +678,21 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const stats = await propertyService.getUserPropertyStats(user.id);
+
+      // Log property stats viewed
+      setImmediate(async () => {
+        try {
+          await eventService.logPropertyStatsViewed(
+            user.id,
+            stats.totalProperties,
+            stats.activeProperties,
+            stats.totalIncidents,
+            getEventMetadata(request)
+          );
+        } catch (error) {
+          fastify.log.error('Failed to log property stats viewed:', error);
+        }
+      });
 
       return stats;
     },
