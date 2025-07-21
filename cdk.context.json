@@ -18,7 +18,8 @@
   },
   "acknowledged-issue-numbers": [
     32775,
-    25358
+    25358,
+    34892
   ],
   "availability-zones:account=337654367097:region=us-east-1": [
     "us-east-1a",
