@@ -3,6 +3,7 @@
 import { DynamoDBEventRepository, EventType, EventCategory, DynamoDBEvent, EventMetadata } from '../repositories/dynamoDB/eventsRepository';
 import { UserRepository } from '../repositories/userRepository';
 import { NotFoundError } from '../utils/errors';
+import { WebSocketBroadcastService } from './websocket/WebSocketBroadcastService';
 
 export class EventService {
     private eventRepository: DynamoDBEventRepository;
@@ -45,6 +46,35 @@ export class EventService {
         };
 
         return categoryMap[eventType];
+    }
+
+    /**
+ * Create event and optionally broadcast immediately for local testing
+ */
+    async createEventWithBroadcast(
+        userId: number,
+        eventType: EventType,
+        title: string,
+        description: string,
+        payload: any,
+        metadata?: EventMetadata,
+        relatedEntityId?: string,
+        relatedEntityType?: string,
+        broadcastService?: WebSocketBroadcastService
+    ): Promise<DynamoDBEvent> {
+        // Create event normally
+        const event = await this.createEvent(
+            userId, eventType, title, description, payload,
+            metadata, relatedEntityId, relatedEntityType
+        );
+
+        // If broadcast service is provided (for local testing), broadcast immediately
+        if (broadcastService) {
+            const message = broadcastService.transformEventToWebSocketMessage(event);
+            await broadcastService.broadcastToUser(userId, message);
+        }
+
+        return event;
     }
 
     /**
