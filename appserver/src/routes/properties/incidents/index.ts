@@ -380,18 +380,18 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Log incident viewed for mobile app prefetching
         setImmediate(async () => {
-      try {
-        await eventService.logIncidentViewed(
-          user.id,
-          incident.id,
-          incident.propertyId,
-          incident.incidentType,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log incident view event:', error);
-      }
-    });
+          try {
+            await eventService.logIncidentViewed(
+              user.id,
+              incident.id,
+              incident.propertyId,
+              incident.incidentType,
+              getEventMetadata(request)
+            );
+          } catch (error) {
+            fastify.log.error('Failed to log incident view event:', error);
+          }
+        });
 
 
         return incident;
@@ -707,19 +707,19 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Log status change
         setImmediate(async () => {
-      try {
-        await eventService.logIncidentStatusChanged(
-          user.id,
-          parseInt(id),
-          existingIncident.propertyId,
-          existingIncident.status,
-          status,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log incident status change events:', error);
-      }
-    });
+          try {
+            await eventService.logIncidentStatusChanged(
+              user.id,
+              parseInt(id),
+              existingIncident.propertyId,
+              existingIncident.status,
+              status,
+              getEventMetadata(request)
+            );
+          } catch (error) {
+            fastify.log.error('Failed to log incident status change events:', error);
+          }
+        });
 
         return incident;
       } catch (err) {

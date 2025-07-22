@@ -282,17 +282,25 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
 
         // Log property viewed
         setImmediate(async () => {
-      try {
-        await eventService.logPropertyViewed(
-          user.id,
-          property.id,
-          property.address,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log property view:', error);
-      }
-    });
+          try {
+            console.log('🔄 Starting event logging...');
+            console.log('📊 Event details:', {
+              userId: user.id,
+              propertyId: property.id,
+              propertyAddress: property.address
+            });
+
+            const result = await eventService.logPropertyViewed(
+              user.id,
+              property.id,
+              property.address,
+              getEventMetadata(request)
+            );
+
+          } catch (error) {
+            fastify.log.error('Failed to log property view:', error);
+          }
+        });
 
         return property;
       } catch (err) {
