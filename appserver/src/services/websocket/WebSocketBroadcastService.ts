@@ -35,7 +35,7 @@ export class WebSocketBroadcastService {
     async broadcastToUser(userId: number, message: WebSocketMessage): Promise<void> {
        const connections = await this.connectionRepo.getConnectionsForUser(userId);
 
-       if (connections.length = 0) {
+       if (connections.length === 0) {
         console.log(`no active connections for user ${userId}`);
         return;
        }
@@ -44,7 +44,11 @@ export class WebSocketBroadcastService {
         this.sendToConnection(connection.connectionId, message)
        );
 
-       await Promise.all(broadcastPromises);
+       try {
+            await Promise.allSettled(broadcastPromises);
+        } catch (error) {
+            console.error(`Error broadcasting to user ${userId}:`, error);
+        }
     }
 
     /**
@@ -55,7 +59,7 @@ export class WebSocketBroadcastService {
             this.broadcastToUser(userId, message)
         );
 
-        await Promise.all(broadcastPromises);
+        await Promise.allSettled(broadcastPromises);
     }
 
     /**
@@ -67,6 +71,8 @@ export class WebSocketBroadcastService {
                 ConnectionId: connectionId,
                 Data: JSON.stringify(message)
             });
+
+            console.log(`Message sent successfully to connection ${connectionId}`);
         } catch (error: any) {
             console.error(`Failed to send message to connection ${connectionId}:`, error);
 
@@ -111,7 +117,7 @@ export class WebSocketBroadcastService {
                     type: 'prefetch',
                     data: {
                         ...baseMessage.data,
-                        prefetchHints: event.payload.prefetchHints
+                        prefetchHints: event.payload?.prefetchHints || []
                     }
                 };
 
@@ -123,7 +129,7 @@ export class WebSocketBroadcastService {
                     type: 'ui_update',
                     data: {
                         ...baseMessage.data,
-                        uiUpdateHints: event.payload.uiUpdateHints
+                        uiUpdateHints: event.payload?.uiUpdateHints || []
                     }
                 };
 
@@ -133,7 +139,7 @@ export class WebSocketBroadcastService {
                     type: 'progress',
                     data: {
                         ...baseMessage.data,
-                        progressHints: event.payload.progressHints
+                        progressHints: event.payload?.progressHints || {}
                     }
                 };
 
@@ -174,5 +180,27 @@ export class WebSocketBroadcastService {
         if (mediumEvents.includes(eventType)) return 'medium';
         return 'low';
     }
+
+    /**
+     * Test connection - for local testing
+     */
+    async testConnection(connectionId: string): Promise<boolean> {
+        try {
+            const testMessage: WebSocketMessage = {
+                type: 'system',
+                priority: 'low',
+                data: { message: 'Connection test', timestamp: Date.now() },
+                timestamp: Date.now(),
+                userId: 0
+            };
+
+            await this.sendToConnection(connectionId, testMessage);
+            return true;
+        } catch (error) {
+            console.error('Connection test failed:', error);
+            return false;
+        }
+    }
 }
+
 

@@ -1,18 +1,21 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBConnectionRepository } from '../../repositories/dynamoDB/connectionRepository';
 import { UserRepository } from '../../repositories/userRepository';
-import jwt from 'jsonwebtoken';
+import { Auth0TokenValidator } from './Auth0TokenValidator';
 
 export class WebSocketConnectionHandler {
     private readonly connectionRepo: DynamoDBConnectionRepository;
     private readonly userRepo: UserRepository;
+    private readonly auth0Validator: Auth0TokenValidator;
 
     constructor(
         connectionRepo: DynamoDBConnectionRepository,
-        userRepo: UserRepository
+        userRepo: UserRepository,
+        auth0Domain: string
     ) {
         this.connectionRepo = connectionRepo;
         this.userRepo = userRepo;
+        this.auth0Validator = new Auth0TokenValidator(auth0Domain);
     }
 
      /**
@@ -21,25 +24,47 @@ export class WebSocketConnectionHandler {
     async handleConnect(event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
         try {
             const connectionId = event.requestContext.connectionId!;
-            const { userId, deviceId } = this.extractConnectionInfo(event);
 
-            // Validate user exists
-            await this.userRepo.getUserById(userId);
+            // Extract Auth0 token from query parameters
+            const token = event.queryStringParameters?.token;
+            if (!token) {
+                return { statusCode: 401, body: 'No token provided' };
+            }
+
+            // Validate token using Auth0's public key (no secret needed!)
+            const { email, auth0Id } = await this.auth0Validator.validateToken(token);
+
+            // Verify user exists in your database
+            const user = await this.userRepo.getUserByAuth0Id(auth0Id);
+            if (!user) {
+                return { statusCode: 401, body: 'User not found' };
+            }
 
             // Store connection
-            await this.connectionRepo.saveConnection(connectionId, userId, deviceId);
+            const deviceId = event.queryStringParameters?.deviceId;
+            await this.connectionRepo.saveConnection(connectionId, user.id, deviceId);
 
-            console.log(`WebSocket connected: ${connectionId} for user ${userId}`);
+            console.log(`WebSocket connected: ${connectionId} for user ${user.id}`);
 
             return {
                 statusCode: 200,
-                body: JSON.stringify({ message: 'Connected successfully' })
+                body: JSON.stringify({
+                    message: 'Connected successfully',
+                    userId: user.id,
+                    connectionId,
+                    timestamp: Date.now()
+                })
             };
         } catch (error) {
             console.error('WebSocket connection failed:', error);
+
             return {
                 statusCode: 401,
-                body: JSON.stringify({ error: 'Connection failed' })
+                body: JSON.stringify({
+                    error: 'Authentication failed',
+                    message: error instanceof Error ? error.message : 'Unknown authentication error',
+                    timestamp: Date.now()
+                })
             };
         }
     }
@@ -51,20 +76,31 @@ export class WebSocketConnectionHandler {
         try {
             const connectionId = event.requestContext.connectionId!;
 
+            const connection = await this.connectionRepo.getConnection(connectionId);
+
             // Remove connection
             await this.connectionRepo.deleteConnection(connectionId);
 
-            console.log(`WebSocket disconnected: ${connectionId}`);
+            console.log(`WebSocket disconnected: ${connectionId}${connection ? ` (user ${connection.userId})` : ''}`);
 
             return {
                 statusCode: 200,
-                body: JSON.stringify({ message: 'Disconnected successfully' })
+                body: JSON.stringify({
+                    message: 'Disconnected successfully',
+                    connectionId,
+                    userId: connection?.userId,
+                    timestamp: Date.now()
+                })
             };
         } catch (error) {
             console.error('WebSocket disconnection failed:', error);
             return {
                 statusCode: 500,
-                body: JSON.stringify({ error: 'Disconnection failed' })
+                body: JSON.stringify({
+                    error: 'Disconnection failed',
+                    message: error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: Date.now()
+                })
             };
         }
     }
@@ -77,52 +113,71 @@ export class WebSocketConnectionHandler {
             const connectionId = event.requestContext.connectionId!;
             const body = JSON.parse(event.body || '{}');
 
+            const connection = await this.connectionRepo.getConnection(connectionId);
+            if (!connection) {
+                console.log(`Message from unknown connection: ${connectionId}`);
+                return {
+                    statusCode: 404,
+                    body: JSON.stringify({
+                        error: 'Connection not found',
+                        timestamp: Date.now()
+                    })
+                };
+            }
+
+            console.log(`WebSocket message received from ${connectionId}:`, body.type);
+
             // Handle ping/pong for keepalive
             if (body.type === 'ping') {
                 return {
                     statusCode: 200,
-                    body: JSON.stringify({ type: 'pong', timestamp: Date.now() })
+                    body: JSON.stringify({
+                        type: 'pong',
+                        timestamp: Date.now(),
+                        connectionId,
+                        userId: connection.userId
+                    })
+                };
+            }
+
+            // Handle subscription requests
+            if (body.type === 'subscribe') {
+                // Handle subscription to specific events or entities
+                console.log(`Subscription request from ${connectionId} (user ${connection.userId}):`, body.data);
+                return {
+                    statusCode: 200,
+                    body: JSON.stringify({
+                        type: 'subscription_ack',
+                        data: body.data,
+                        timestamp: Date.now(),
+                        userId: connection.userId
+                    })
                 };
             }
 
             // Handle other message types as needed
             return {
                 statusCode: 200,
-                body: JSON.stringify({ message: 'Message received' })
+                body: JSON.stringify({
+                    message: 'Message received',
+                    type: body.type,
+                    timestamp: Date.now(),
+                    userId: connection.userId
+                })
             };
         } catch (error) {
             console.error('WebSocket message handling failed:', error);
             return {
                 statusCode: 500,
-                body: JSON.stringify({ error: 'Message handling failed' })
+                body: JSON.stringify({
+                    error: 'Message handling failed',
+                    message: error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: Date.now()
+                })
             };
         }
     }
 
-    /**
-     * Extract user info from connection event
-     */
-    private extractConnectionInfo(event: APIGatewayProxyEvent): { userId: number; deviceId?: string } {
-        // Get auth token from query parameters or headers
-        const token = event.queryStringParameters?.token ||
-                     event.headers?.Authorization?.replace('Bearer ', '');
 
-        if (!token) {
-            throw new Error('No auth token provided');
-        }
-
-        // Decode JWT token to get user info
-        const decoded = jwt.decode(token) as any;
-        if (!decoded || !decoded.sub) {
-            throw new Error('Invalid auth token');
-        }
-
-        // Extract device ID from query parameters
-        const deviceId = event.queryStringParameters?.deviceId;
-
-        return {
-            userId: parseInt(decoded.sub),
-            deviceId
-        };
-    }
 }
+

@@ -32,7 +32,7 @@ export class EventsStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: isProd,
       removalPolicy: removalPolicy,
-      stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
+      stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES
     });
 
     //  querying events by user
