@@ -8,6 +8,8 @@ const incidentBaseSchema = {
     description: { type: "string" },
     reportedAt: { type: "string", format: "date-time" },
     resolvedAt: { type: "string", format: "date-time", nullable: true },
+    latitude: { type: "number", nullable: true },
+    longitude: { type: "number", nullable: true },
     severity: {
       type: "string",
       enum: Object.values(IncidentSeverity),
@@ -277,6 +279,8 @@ export const incidentsResponseSchema = {
                 type: "string",
                 enum: ["Active", "Maintenance", "Archived"],
               },
+              latitude: { type: "number", nullable: true },
+              longitude: { type: "number", nullable: true },
             },
           },
           images: {

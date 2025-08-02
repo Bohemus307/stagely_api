@@ -140,6 +140,8 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                       state: { type: "string", nullable: true },
                       zipCode: { type: "string", nullable: true },
                       country: { type: "string" },
+                      latitude: { type: "number", nullable: true },
+                      longitude: { type: "number", nullable: true },
                       status: {
                         type: "string",
                         enum: ["Active", "Maintenance", "Archived"],
@@ -286,6 +288,8 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                 city: { type: "string" },
                 state: { type: "string", nullable: true },
                 zipCode: { type: "string", nullable: true },
+                latitude: { type: "number", nullable: true },
+                longitude: { type: "number", nullable: true },
                 country: { type: "string" },
                 status: {
                   type: "string",
