@@ -975,6 +975,10 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       body: {
         type: "object",
         properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user creating the conversation",
+          },
           propertyId: { type: "integer" },
           incidentType: { type: "string" },
           description: { type: "string" },
@@ -1054,13 +1058,14 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       const incidentData = request.body as any;
 
       try {
-        // Get user from auth token
+        // Get user by id and verify its auth0 id matches
         const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
+          where: { id: incidentData.userId },
         });
 
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
+        // Verify this user belongs to the authenticated user
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          return sendUnauthorized(reply, "User not found or not authorized");
         }
 
         // Verify the property belongs to the user

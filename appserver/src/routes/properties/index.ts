@@ -86,6 +86,8 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
                   },
                   createdAt: { type: "string", format: "date-time" },
                   updatedAt: { type: "string", format: "date-time" },
+                  latitude: { type: "number", nullable: true },
+                  longitude: { type: "number", nullable: true },
                   _count: {
                     type: "object",
                     properties: {

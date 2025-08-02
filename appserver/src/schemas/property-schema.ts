@@ -14,8 +14,8 @@ const propertyBaseSchema = {
     state: { type: "string", nullable: true },
     zipCode: { type: "string", nullable: true },
     country: { type: "string" },
-    latitude: { type: "number" }, // Removed format: "decimal"
-    longitude: { type: "number" }, // Removed format: "decimal"
+    latitude: { type: "number" },
+    longitude: { type: "number" },
     status: {
       type: "string",
       enum: Object.values(PropertyStatus),
