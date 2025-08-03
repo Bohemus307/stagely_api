@@ -216,7 +216,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           : undefined,
       };
 
-      // Verify the requested propertyId belongs to the user if specified
       if (
         queryParams.propertyId &&
         !propertyIds.includes(queryParams.propertyId)
@@ -225,11 +224,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           reply,
           "You don't have permission to access this property's incidents",
         );
-      }
-
-      // If no specific property is requested, limit to all user properties
-      if (!queryParams.propertyId) {
-        queryParams.propertyIds = propertyIds;
       }
 
       const result = await incidentService.getIncidents(queryParams);

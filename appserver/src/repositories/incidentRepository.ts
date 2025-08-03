@@ -45,7 +45,10 @@ export interface PaginatedResponse<T> {
 
 // Define incident with included relations type
 export interface IncidentWithRelations extends Incident {
-  property: Pick<Property, "id" | "address" | "city" | "state" | "country">;
+  property: Pick<
+    Property,
+    "id" | "address" | "city" | "state" | "country" | "latitude" | "longitude"
+  >;
   images: Pick<PropertyImage, "id" | "imageUrl" | "caption" | "createdAt">[];
 }
 
@@ -142,6 +145,8 @@ export class IncidentRepository {
               city: true,
               state: true,
               country: true,
+              latitude: true,
+              longitude: true,
             },
           },
           images: {
