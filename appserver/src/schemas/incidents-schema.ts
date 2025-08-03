@@ -8,8 +8,6 @@ const incidentBaseSchema = {
     description: { type: "string" },
     reportedAt: { type: "string", format: "date-time" },
     resolvedAt: { type: "string", format: "date-time", nullable: true },
-    latitude: { type: "number", nullable: true },
-    longitude: { type: "number", nullable: true },
     severity: {
       type: "string",
       enum: Object.values(IncidentSeverity),
@@ -46,7 +44,6 @@ export const createIncidentSchema = {
   properties: {
     ...incidentBaseSchema.properties,
     propertyId: { type: "integer" },
-    // Standard image array for manual creation
     images: {
       type: "array",
       items: {
@@ -212,7 +209,6 @@ const incidentObjectLabelSchema = {
   },
 };
 
-// Schema for a single incident response
 export const incidentResponseSchema = {
   type: "object",
   properties: {
@@ -230,6 +226,8 @@ export const incidentResponseSchema = {
         state: { type: "string", nullable: true },
         zipCode: { type: "string", nullable: true },
         country: { type: "string" },
+        latitude: { type: "number", nullable: true },
+        longitude: { type: "number", nullable: true },
         status: {
           type: "string",
           enum: ["Active", "Maintenance", "Archived"],
@@ -274,13 +272,13 @@ export const incidentsResponseSchema = {
               city: { type: "string" },
               state: { type: "string", nullable: true },
               zipCode: { type: "string", nullable: true },
+              latitude: { type: "number", nullable: true },
+              longitude: { type: "number", nullable: true },
               country: { type: "string" },
               status: {
                 type: "string",
                 enum: ["Active", "Maintenance", "Archived"],
               },
-              latitude: { type: "number", nullable: true },
-              longitude: { type: "number", nullable: true },
             },
           },
           images: {
