@@ -19,7 +19,7 @@ import s3Plugin from "./plugins/s3Plugin";
 import dynamoDB from "./plugins/dynamoDB";
 import emailPlugin from "./plugins/emailPlugin";
 import inviteRoutes from "./routes/users/invite";
-
+import eventRoutes from "./routes/events";
 
 // Load environment variables from .env file
 config();
@@ -218,7 +218,7 @@ server.register(autoLoad, {
   dirNameRoutePrefix: true,
 });
 server.register(inviteRoutes, { prefix: "/users" });
-server.register(require('./routes/events'), { prefix: '/events' });
+server.register(eventRoutes, {prefix: "/events"});
 
 const start = async () => {
   try {
