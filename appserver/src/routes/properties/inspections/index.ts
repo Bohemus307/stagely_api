@@ -386,25 +386,25 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
 
         // ✅ CRITICAL EVENT: Check if inspection was completed
         if (updateData.status === 'COMPLETED' || updateData.completed === true) {
-          // Get photo count using the correct method
-          const inspectionImages = await inspectionService.getInspectionImages(parseInt(id));
-          const photoCount = inspectionImages.length;
+    // Get photo count using the correct method
+    const inspectionImages = await inspectionService.getInspectionImages(parseInt(id));
+    const photoCount = inspectionImages.length;
 
-          setImmediate(async () => {
-            try {
-              await eventService.logInspectionCompleted(
+    setImmediate(async () => {
+        try {
+            await eventService.logInspectionCompleted(
                 user.id,
                 parseInt(id),
                 existingInspection.propertyId,
                 existingInspection.title,
                 photoCount,
                 getEventMetadata(request)
-              );
-            } catch (error) {
-              fastify.log.error('Failed to log inspection completed event:', error);
-            }
-          });
+            );
+        } catch (error) {
+            fastify.log.error('Failed to log inspection completed event:', error);
         }
+    });
+}
 
         return updatedInspection;
       } catch (err) {
@@ -587,28 +587,21 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           inspectionId: parseInt(id),
         });
 
-        // ✅ CAPTURE VALUES
-        const capturedUserId = user?.id;
-        const capturedInspectionId = parseInt(id);
-        const capturedPropertyId = existingInspection?.propertyId;
-        const capturedImageUrl = imageData?.imageUrl;
-        const capturedSpaceType = imageData?.spaceType || 'Unknown';
-
         // Log inspection photo uploaded
         setImmediate(async () => {
-          try {
-
-            await eventService.logInspectionPhotoUploaded(
-              capturedUserId,
-              capturedInspectionId,
-              capturedPropertyId,
-              capturedImageUrl,
-              capturedSpaceType
-            );
-          } catch (error) {
-            fastify.log.error('❌ ERROR: Failed to log inspection photo upload:', error);
-          }
-        });
+      try {
+        await eventService.logInspectionPhotoUploaded(
+          user.id,
+          parseInt(id),
+          existingInspection.propertyId,
+          imageData.imageUrl,
+          imageData.spaceType,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log inspection photo upload:', error);
+      }
+    });
 
         reply.code(201);
         return uploadedImage;
@@ -717,22 +710,22 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           images,
         );
 
-        // Log bulk photos uploaded for progress tracking
+          // Log bulk photos uploaded for progress tracking
         setImmediate(async () => {
-          try {
-            const uploadedBytes = images.length * 2000000; // Rough estimate: 2MB per image
-            await eventService.logInspectionBulkPhotosUploaded(
-              user.id,
-              parseInt(id),
-              existingInspection.propertyId,
-              images.length,
-              uploadedBytes,
-              //getEventMetadata(request)
-            );
-          } catch (error) {
-            fastify.log.error('Failed to log bulk photo upload:', error);
-          }
-        });
+      try {
+        const uploadedBytes = images.length * 2000000; // Rough estimate: 2MB per image
+        await eventService.logInspectionBulkPhotosUploaded(
+          user.id,
+          parseInt(id),
+          existingInspection.propertyId,
+          images.length,
+          uploadedBytes,
+          getEventMetadata(request)
+        );
+      } catch (error) {
+        fastify.log.error('Failed to log bulk photo upload:', error);
+      }
+    });
 
         reply.code(201);
         return {

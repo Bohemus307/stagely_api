@@ -1,3 +1,4 @@
+// src/routes/events.ts
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { EventType, EventCategory } from '../repositories/dynamoDB/eventsRepository';
 import { EventService } from '../services/eventService';

@@ -21,7 +21,6 @@ import emailPlugin from "./plugins/emailPlugin";
 import inviteRoutes from "./routes/users/invite";
 import eventRoutes from "./routes/events";
 
-
 // Load environment variables from .env file
 config();
 

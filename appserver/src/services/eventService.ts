@@ -3,6 +3,7 @@
 import { DynamoDBEventRepository, EventType, EventCategory, DynamoDBEvent, EventMetadata } from '../repositories/dynamoDB/eventsRepository';
 import { UserRepository } from '../repositories/userRepository';
 import { NotFoundError } from '../utils/errors';
+import { WebSocketBroadcastService } from './websocket/WebSocketBroadcastService';
 
 export class EventService {
     private eventRepository: DynamoDBEventRepository;
@@ -165,7 +166,7 @@ export class EventService {
                 propertyId,
                 incidentType,
                 timestamp: new Date().toISOString(),
-                
+
                 prefetchHints: {
                     images: true,
                     relatedIncidents: true,
