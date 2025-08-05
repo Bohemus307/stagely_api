@@ -13,51 +13,25 @@ function getHeaderValue(headerValue: string | string[] | undefined): string | un
 }
 
 /**
- * Helper to clean values for DynamoDB (removes undefined, null, NaN)
- */
-function cleanForDynamoDB(value: any): any {
-    if (value === undefined || value === null || Number.isNaN(value)) {
-        return undefined; // Will be filtered out
-    }
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        const cleaned: any = {};
-        for (const [key, val] of Object.entries(value)) {
-            const cleanedVal = cleanForDynamoDB(val);
-            if (cleanedVal !== undefined) {
-                cleaned[key] = cleanedVal;
-            }
-        }
-        return Object.keys(cleaned).length > 0 ? cleaned : undefined;
-    }
-    return value;
-}
-
-/**
- * Extract event metadata from request - DynamoDB safe
+ * Extract event metadata from request
  */
 export function getEventMetadata(request: FastifyRequest): EventMetadata {
     const startTime = (request as any).startTime || Date.now();
     const duration = Date.now() - startTime;
 
-    // Calculate duration safely
-    const safeDuration = Number.isFinite(duration) ? duration : undefined;
-
-    const rawMetadata = {
-        ipAddress: request.ip || '127.0.0.1',
+    return {
+        ipAddress: request.ip,
         userAgent: getHeaderValue(request.headers['user-agent']),
         source: getHeaderValue(request.headers['x-app-source']) || 'api', // mobile, web, api
         deviceId: getHeaderValue(request.headers['x-device-id']),
         version: getHeaderValue(request.headers['x-app-version']),
         performanceMetrics: {
-            duration: safeDuration,
+            duration,
             memoryUsage: process.memoryUsage().heapUsed,
             queryCount: (request as any).queryCount || 0,
             cacheHit: (request as any).cacheHit || false
         }
     };
-
-    // Clean the metadata to remove undefined values
-    return cleanForDynamoDB(rawMetadata) as EventMetadata;
 }
 
 /**
