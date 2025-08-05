@@ -48,7 +48,7 @@ export class EventService {
     }
 
     /**
-     * Create a new event with user validation
+     * Create a new event
      */
     async createEvent(
         userId: number,
@@ -131,7 +131,7 @@ export class EventService {
                 propertyId,
                 propertyAddress,
                 timestamp: new Date().toISOString(),
-                // Prefetch hints for mobile app
+
                 prefetchHints: {
                     incidents: true,
                     inspections: true,
@@ -146,7 +146,7 @@ export class EventService {
     }
 
     /**
-     * Log incident viewed - triggers prefetching
+     * Log incident viewed
      */
     async logIncidentViewed(
         userId: number,
@@ -165,7 +165,7 @@ export class EventService {
                 propertyId,
                 incidentType,
                 timestamp: new Date().toISOString(),
-                // Prefetch hints for mobile app
+                
                 prefetchHints: {
                     images: true,
                     relatedIncidents: true,
