@@ -1,3 +1,4 @@
+// src/repositories/dynamoDB/eventsRepository.ts
 import {
     PutCommand,
     GetCommand,
@@ -98,37 +99,37 @@ export class DynamoDBEventRepository {
   }
 
   /**
-     * Create multiple events in batch (for performance)
-     */
-    async createEventsBatch(eventsData: Omit<DynamoDBEvent, 'eventId' | 'timestamp'>[]): Promise<DynamoDBEvent[]> {
-        const events: DynamoDBEvent[] = eventsData.map(eventData => ({
-            eventId: uuidv4(),
-            timestamp: Date.now(),
-            ...eventData
-        }));
+   * Create multiple events in batch (for performance)
+   */
+  async createEventsBatch(eventsData: Omit<DynamoDBEvent, 'eventId' | 'timestamp'>[]): Promise<DynamoDBEvent[]> {
+    const events: DynamoDBEvent[] = eventsData.map(eventData => ({
+      eventId: uuidv4(),
+      timestamp: Date.now(),
+      ...eventData
+    }));
 
-        // DynamoDB batch write (up to 25 items per request)
-        const batches = [];
-        for (let i = 0; i < events.length; i += 25) {
-            batches.push(events.slice(i, i + 25));
-        }
-
-        for (const batch of batches) {
-            const params = {
-                RequestItems: {
-                    [this.tableName]: batch.map(event => ({
-                        PutRequest: {
-                            Item: event
-                        }
-                    }))
-                }
-            };
-
-            await this.documentClient.send(new BatchWriteCommand(params));
-        }
-
-        return events;
+    // DynamoDB batch write (up to 25 items per request)
+    const batches = [];
+    for (let i = 0; i < events.length; i += 25) {
+      batches.push(events.slice(i, i + 25));
     }
+
+    for (const batch of batches) {
+      const params = {
+        RequestItems: {
+          [this.tableName]: batch.map(event => ({
+            PutRequest: {
+              Item: event
+            }
+          }))
+        }
+      };
+
+      await this.documentClient.send(new BatchWriteCommand(params));
+    }
+
+    return events;
+  }
 
   /**
    * Get a specific event by ID
@@ -144,53 +145,10 @@ export class DynamoDBEventRepository {
   }
 
   /**
-     * Get events for a specific user
-     */
-    async getEventsForUser(
-        userId: number,
-        limit: number = 50,
-        lastEvaluatedKey?: any,
-        startTime?: number,
-        endTime?: number
-    ): Promise<{
-        events: DynamoDBEvent[];
-        lastEvaluatedKey?: any;
-    }> {
-        const params: any = {
-            TableName: this.tableName,
-            IndexName: 'userId-timestamp-index',
-            KeyConditionExpression: 'userId = :userId',
-            ExpressionAttributeValues: {
-                ':userId': userId,
-            },
-            Limit: limit,
-            ScanIndexForward: false, // Most recent first
-        };
-
-        if (startTime && endTime) {
-            params.KeyConditionExpression += ' AND #timestamp BETWEEN :startTime AND :endTime';
-            params.ExpressionAttributeNames = { '#timestamp': 'timestamp' };
-            params.ExpressionAttributeValues[':startTime'] = startTime;
-            params.ExpressionAttributeValues[':endTime'] = endTime;
-        }
-
-        if (lastEvaluatedKey) {
-            params.ExclusiveStartKey = lastEvaluatedKey;
-        }
-
-        const result = await this.documentClient.send(new QueryCommand(params));
-
-        return {
-            events: result.Items as DynamoDBEvent[],
-            lastEvaluatedKey: result.LastEvaluatedKey,
-        };
-    }
-
-  /**
-   * Get events by type
+   * Get events for a specific user with date filtering
    */
-  async getEventsByType(
-    eventType: EventType,
+  async getEventsForUser(
+    userId: number,
     limit: number = 50,
     lastEvaluatedKey?: any,
     startTime?: number,
@@ -200,167 +158,38 @@ export class DynamoDBEventRepository {
     lastEvaluatedKey?: any;
   }> {
     const params: any = {
-            TableName: this.tableName,
-            IndexName: 'eventType-timestamp-index',
-            KeyConditionExpression: 'eventType = :eventType',
-            ExpressionAttributeValues: {
-                ':eventType': eventType,
-            },
-            Limit: limit,
-            ScanIndexForward: false,
-        };
-
-        if (startTime && endTime) {
-            params.KeyConditionExpression += ' AND #timestamp BETWEEN :startTime AND :endTime';
-            params.ExpressionAttributeNames = { '#timestamp': 'timestamp' };
-            params.ExpressionAttributeValues[':startTime'] = startTime;
-            params.ExpressionAttributeValues[':endTime'] = endTime;
-        }
-
-        if (lastEvaluatedKey) {
-            params.ExclusiveStartKey = lastEvaluatedKey;
-        }
-
-        const result = await this.documentClient.send(new QueryCommand(params));
-
-        return {
-            events: result.Items as DynamoDBEvent[],
-            lastEvaluatedKey: result.LastEvaluatedKey,
-        };
-    }
-
-
-  /**
-   * Get events by category
-   */
-  async getEventsByCategory(
-    category: EventCategory,
-    limit: number = 50,
-    lastEvaluatedKey?: any,
-    startTime?: number,
-    endTime?: number
-  ): Promise<{
-    events: DynamoDBEvent[];
-    lastEvaluatedKey?: any;
-  }> {
-    const params: any = {
-            TableName: this.tableName,
-            IndexName: 'category-timestamp-index',
-            KeyConditionExpression: 'category = :category',
-            ExpressionAttributeValues: {
-                ':category': category,
-            },
-            Limit: limit,
-            ScanIndexForward: false,
-        };
-
-        if (startTime && endTime) {
-            params.KeyConditionExpression += ' AND #timestamp BETWEEN :startTime AND :endTime';
-            params.ExpressionAttributeNames = { '#timestamp': 'timestamp' };
-            params.ExpressionAttributeValues[':startTime'] = startTime;
-            params.ExpressionAttributeValues[':endTime'] = endTime;
-        }
-
-        if (lastEvaluatedKey) {
-            params.ExclusiveStartKey = lastEvaluatedKey;
-        }
-
-        const result = await this.documentClient.send(new QueryCommand(params));
-
-        return {
-            events: result.Items as DynamoDBEvent[],
-            lastEvaluatedKey: result.LastEvaluatedKey,
-        };
-    }
-
-  /**
-   * Get events with filtering
-   */
-  async getEventsWithFilters(
-        userId?: number,
-        eventTypes?: EventType[],
-        categories?: EventCategory[],
-        startTime?: number,
-        endTime?: number,
-        limit: number = 50,
-        lastEvaluatedKey?: any
-    ): Promise<{
-        events: DynamoDBEvent[];
-        lastEvaluatedKey?: any;
-    }> {
-        // If userId is provided, use the user index for better performance
-        if (userId) {
-            return this.getEventsForUser(userId, limit, lastEvaluatedKey, startTime, endTime);
-        }
-
-        // Otherwise, use scan with filters (less efficient but more flexible)
-        const params: any = {
-            TableName: this.tableName,
-            Limit: limit,
-        };
-
-        const filterExpressions = [];
-        const expressionAttributeValues: any = {};
-        const expressionAttributeNames: any = {};
-
-        if (eventTypes && eventTypes.length > 0) {
-            const eventTypeConditions = eventTypes.map((type, index) => {
-                const placeholder = `:eventType${index}`;
-                expressionAttributeValues[placeholder] = type;
-                return `eventType = ${placeholder}`;
-            });
-            filterExpressions.push(`(${eventTypeConditions.join(' OR ')})`);
-        }
-
-        if (categories && categories.length > 0) {
-            const categoryConditions = categories.map((category, index) => {
-                const placeholder = `:category${index}`;
-                expressionAttributeValues[placeholder] = category;
-                return `category = ${placeholder}`;
-            });
-            filterExpressions.push(`(${categoryConditions.join(' OR ')})`);
-        }
-
-        if (startTime && endTime) {
-            filterExpressions.push('#timestamp BETWEEN :startTime AND :endTime');
-            expressionAttributeNames['#timestamp'] = 'timestamp';
-            expressionAttributeValues[':startTime'] = startTime;
-            expressionAttributeValues[':endTime'] = endTime;
-        }
-
-        if (filterExpressions.length > 0) {
-            params.FilterExpression = filterExpressions.join(' AND ');
-        }
-
-        if (Object.keys(expressionAttributeValues).length > 0) {
-            params.ExpressionAttributeValues = expressionAttributeValues;
-        }
-
-        if (Object.keys(expressionAttributeNames).length > 0) {
-            params.ExpressionAttributeNames = expressionAttributeNames;
-        }
-
-        if (lastEvaluatedKey) {
-            params.ExclusiveStartKey = lastEvaluatedKey;
-        }
-
-        const result = await this.documentClient.send(new ScanCommand(params));
-
-        return {
-            events: result.Items as DynamoDBEvent[],
-            lastEvaluatedKey: result.LastEvaluatedKey,
-        };
-    }
-
-  /**
-   * Delete an event (optional - for cleanup)
-   */
-  async deleteEvent(eventId: string, timestamp: number): Promise<void> {
-    const params = {
       TableName: this.tableName,
-      Key: { eventId, timestamp },
+      IndexName: 'userId-timestamp-index',
+      KeyConditionExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId,
+      },
+      Limit: limit,
+      ScanIndexForward: false, // Most recent first
     };
 
-    await this.documentClient.send(new DeleteCommand(params));
+    // Add date filtering if provided
+    if (startTime && endTime) {
+      params.KeyConditionExpression += ' AND #timestamp BETWEEN :startTime AND :endTime';
+      params.ExpressionAttributeNames = { '#timestamp': 'timestamp' };
+      params.ExpressionAttributeValues[':startTime'] = startTime;
+      params.ExpressionAttributeValues[':endTime'] = endTime;
+    } else if (startTime) {
+      params.KeyConditionExpression += ' AND #timestamp >= :startTime';
+      params.ExpressionAttributeNames = { '#timestamp': 'timestamp' };
+      params.ExpressionAttributeValues[':startTime'] = startTime;
+    }
+
+    if (lastEvaluatedKey) {
+      params.ExclusiveStartKey = lastEvaluatedKey;
+    }
+
+    const result = await this.documentClient.send(new QueryCommand(params));
+
+    return {
+      events: result.Items as DynamoDBEvent[],
+      lastEvaluatedKey: result.LastEvaluatedKey,
+    };
   }
+
 }

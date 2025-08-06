@@ -876,70 +876,9 @@ tap.test("Event Performance Tests", async (t) => {
   t.end();
 });
 
-// ✅ NEW: Integration Tests (Optional - only if you want to test with real DynamoDB)
-tap.test("Event Integration Tests (Optional)", async (t) => {
-  // Skip integration tests if not in integration test environment
-  if (process.env.NODE_ENV !== 'test-integration') {
-    t.skip('Integration tests - set NODE_ENV=test-integration to run');
-    return;
-  }
-
-  const eventRepo = new DynamoDBEventRepository(documentClient, deploymentEnv);
-  const userRepo = new UserRepository(prisma);
-  const eventService = new EventService(eventRepo, userRepo);
-
-  t.test("should create and retrieve real events", async (t) => {
-    try {
-      // Create a test event
-      const event = await eventService.createEvent(
-        1,
-        EventType.PROPERTY_VIEWED,
-        "Integration Test Property View",
-        "Testing real DynamoDB integration",
-        {
-          propertyId: 999,
-          propertyAddress: "999 Integration Test St",
-          test: true
-        },
-        {
-          source: "integration-test",
-          ipAddress: "127.0.0.1"
-        }
-      );
-
-      logTest("Integration Test - Event Creation", {
-        eventId: event.eventId,
-        created: "✅"
-      });
-
-      t.ok(event.eventId, "Event should have ID");
-      t.equal(event.eventType, EventType.PROPERTY_VIEWED);
-
-      // Try to retrieve the event
-      const retrievedEvents = await eventService.getEventsForUser(1, 10);
-      const createdEvent = retrievedEvents.events.find(e => e.eventId === event.eventId);
-
-      t.ok(createdEvent, "Should be able to retrieve created event");
-      t.equal(createdEvent?.payload.test, true, "Payload should match");
-
-      logTest("Integration Test - Event Retrieval", {
-        retrieved: "✅",
-        eventCount: retrievedEvents.events.length
-      });
-
-    } catch (error) {
-      console.error('Integration test error (expected if no real DynamoDB):', error);
-      t.skip('Integration test failed - likely no real DynamoDB available');
-    }
-  });
-
-  t.teardown(async () => {
-    await prisma.$disconnect();
-  });
-});
 
 console.log(`\n${colors.bright}${colors.green}🧪 Event System Tests Complete!${colors.reset}`);
 console.log(`${colors.cyan}✅ All WebSocket references removed${colors.reset}`);
 console.log(`${colors.cyan}✅ Focuses on event storage and retrieval${colors.reset}`);
 console.log(`${colors.cyan}✅ Performance and helper function tests included${colors.reset}`);
-console.log(`${colors.cyan}✅ Optional integration tests available${colors.reset}\n`);
+

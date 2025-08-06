@@ -1,9 +1,7 @@
 // src/services/eventService.ts
-
 import { DynamoDBEventRepository, EventType, EventCategory, DynamoDBEvent, EventMetadata } from '../repositories/dynamoDB/eventsRepository';
 import { UserRepository } from '../repositories/userRepository';
 import { NotFoundError } from '../utils/errors';
-
 
 export class EventService {
     private eventRepository: DynamoDBEventRepository;
@@ -323,10 +321,9 @@ export class EventService {
     // HIGH PRIORITY EVENT METHODS
     // ===========================================
 
-
     /**
- * Log when a property is updated (general updates)
- */
+     * Log when a property is updated (general updates)
+     */
     async logPropertyUpdated(
         userId: number,
         propertyId: number,
@@ -405,11 +402,9 @@ export class EventService {
         );
     }
 
-
     // ===========================================
-    // MEDIUM PRIORITY EVENTS (Keep some for completeness)
+    // MEDIUM PRIORITY EVENTS
     // ===========================================
-
 
     /**
      * Log bulk photos uploaded - progress tracking
@@ -448,7 +443,7 @@ export class EventService {
     }
 
     /**
-     * MEDIUM: Log inspection photo uploaded
+     * Log inspection photo uploaded
      */
     async logInspectionPhotoUploaded(
         userId: number,
@@ -483,7 +478,7 @@ export class EventService {
     }
 
     /**
-     * MEDIUM: Log incident image uploaded
+     * Log incident image uploaded
      */
     async logIncidentImageUploaded(
         userId: number,
@@ -516,8 +511,8 @@ export class EventService {
     }
 
     /**
- *  Log property status changed - immediate UI update
- */
+     * Log property status changed - immediate UI update
+     */
     async logPropertyStatusChanged(
         userId: number,
         propertyId: number,
@@ -551,7 +546,7 @@ export class EventService {
     }
 
     /**
-     *  Log property stats viewed - triggers prefetching
+     * Log property stats viewed - triggers prefetching
      */
     async logPropertyStatsViewed(
         userId: number,
@@ -584,11 +579,13 @@ export class EventService {
         );
     }
 
-
     // ===========================================
     // REPOSITORY DELEGATE METHODS
     // ===========================================
 
+    /**
+     * Get events for a specific user (simplified - date filtering only)
+     */
     async getEventsForUser(
         userId: number,
         limit: number = 50,
@@ -597,45 +594,5 @@ export class EventService {
         endTime?: number
     ) {
         return this.eventRepository.getEventsForUser(userId, limit, lastEvaluatedKey, startTime, endTime);
-    }
-
-    async getEventsByType(
-        eventType: EventType,
-        limit: number = 50,
-        lastEvaluatedKey?: any,
-        startTime?: number,
-        endTime?: number
-    ) {
-        return this.eventRepository.getEventsByType(eventType, limit, lastEvaluatedKey, startTime, endTime);
-    }
-
-    async getEventsByCategory(
-        category: EventCategory,
-        limit: number = 50,
-        lastEvaluatedKey?: any,
-        startTime?: number,
-        endTime?: number
-    ) {
-        return this.eventRepository.getEventsByCategory(category, limit, lastEvaluatedKey, startTime, endTime);
-    }
-
-    async getEventsWithFilters(
-        userId?: number,
-        eventTypes?: EventType[],
-        categories?: EventCategory[],
-        startTime?: number,
-        endTime?: number,
-        limit: number = 50,
-        lastEvaluatedKey?: any
-    ) {
-        return this.eventRepository.getEventsWithFilters(
-            userId,
-            eventTypes,
-            categories,
-            startTime,
-            endTime,
-            limit,
-            lastEvaluatedKey
-        );
     }
 }

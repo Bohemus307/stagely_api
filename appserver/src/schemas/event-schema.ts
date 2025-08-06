@@ -1,5 +1,10 @@
+// src/schemas/event-schema.ts
 
 const eventSchemas = {
+  // ============================================
+  // EXISTING SCHEMAS (keep these for backward compatibility)
+  // ============================================
+
   // Common event object schema
   eventObjectSchema: {
     type: 'object',
@@ -76,6 +81,10 @@ const eventSchemas = {
     }
   },
 
+  // ============================================
+  // OLD QUERY SCHEMAS (can be removed eventually)
+  // ============================================
+
   // Query schema for filtering events
   eventQuerySchema: {
     type: 'object',
@@ -136,6 +145,103 @@ const eventSchemas = {
     required: ['userId'],
     additionalProperties: false
   },
+
+  // ============================================
+  // NEW SIMPLIFIED SCHEMAS (use these going forward)
+  // ============================================
+
+  // NEW: Simple date-filtering query schema - much cleaner!
+  simpleDateFilterEventQuerySchema: {
+    type: 'object',
+    properties: {
+      // Required for authentication
+      requestingUserId: {
+        type: 'number',
+        description: 'ID of the user making the request (for authorization)'
+      },
+
+      // Time filtering - the main use case
+      startTime: {
+        type: 'string',
+        pattern: '^\\d+$',
+        description: 'Start time as Unix timestamp in milliseconds (string)'
+      },
+      endTime: {
+        type: 'string',
+        pattern: '^\\d+$',
+        description: 'End time as Unix timestamp in milliseconds (string)'
+      },
+
+      // Special recent events flag (last 24 hours)
+      recent: {
+        type: 'boolean',
+        description: 'If true, returns events from last 24 hours (overrides startTime/endTime)'
+      },
+
+      // Pagination
+      limit: {
+        type: 'string',
+        pattern: '^\\d+$',
+        description: 'Maximum number of events to return (string, max 100)',
+        default: '50'
+      },
+      lastEvaluatedKey: {
+        type: 'string',
+        description: 'Pagination token from previous request (JSON string)'
+      }
+    },
+    required: ['requestingUserId'],
+    additionalProperties: false
+  },
+
+  // NEW: Simplified response schema
+  simplifiedEventsResponseSchema: {
+    type: 'object',
+    properties: {
+      success: {
+        type: 'boolean',
+        example: true
+      },
+      data: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            eventId: { type: 'string' },
+            userId: { type: 'number' },
+            eventType: { type: 'string' },
+            category: { type: 'string' },
+            timestamp: { type: 'number' },
+            title: { type: 'string' },
+            description: { type: 'string' },
+            payload: { type: 'object' },
+            metadata: { type: 'object', nullable: true },
+            relatedEntityId: { type: 'string', nullable: true },
+            relatedEntityType: { type: 'string', nullable: true }
+          }
+        }
+      },
+      pagination: {
+        type: 'object',
+        properties: {
+          hasMore: { type: 'boolean' },
+          lastEvaluatedKey: { type: 'object', nullable: true }
+        }
+      },
+      filters: {
+        type: 'object',
+        properties: {
+          startTime: { type: 'number', nullable: true },
+          endTime: { type: 'number', nullable: true },
+          recent: { type: 'boolean' }
+        }
+      }
+    }
+  },
+
+  // ============================================
+  // OTHER SCHEMAS (probably not needed anymore)
+  // ============================================
 
   // Create event request body
   createEventBodySchema: {
