@@ -14,7 +14,6 @@ import { DataStack } from "../cdk/DataStack";
 import { MessagingStack } from '../cdk/MessagingStack';
 import { EmailStack } from '../cdk/EmailStack';
 import { EventsStack } from '../cdk/EventsStack';
-import { WebSocketStack } from '../cdk/webSocketStack';
 
 const app = new cdk.App();
 
@@ -51,18 +50,8 @@ const eventsStack = new EventsStack(app, `${APP_NAME}-Events`, {
   env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION }
 });
 
-const webSocketStack = new WebSocketStack(app, `${APP_NAME}-WebSocket`, {
-  deploymentEnv: deploymentEnv,
-  connectionsTable: messagingStack.connectionsTable,
-  eventsTable: eventsStack.eventsTable,
-  auth0Domain: 'placeholder.auth0.com', // ✅ Temporary placeholder
-  env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION }
-});
-
 // Add dependencies to ensure correct deployment order
 computeStack.addDependency(dataStack);
-webSocketStack.addDependency(messagingStack);
-webSocketStack.addDependency(eventsStack);
 
 new StaticObjectStorageStack(app, `${APP_NAME}-StaticAssets`, {
   env: { account: ACCOUNT_ID, region: "us-east-1" },
