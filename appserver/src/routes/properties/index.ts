@@ -16,7 +16,7 @@ import { PropertyService } from "../../services/properties";
 import { EventService } from "../../services/eventService";
 import { DynamoDBEventRepository } from "../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../repositories/userRepository";
-import { getEventMetadata, getChangedFields } from "../../utils/eventHelpers";
+import { getEventMetadata } from "../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -428,24 +428,40 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           parseInt(id),
           updateData,
         );
+        
         //log property updated
         setImmediate(async () => {
-          try {
-            const changedFields = getChangedFields(existingProperty, property);
+        try {
+          const metadata = getEventMetadata(request);
 
-            if (changedFields.length > 0) {
-              await eventService.logPropertyUpdated(
-                user.id,
-                parseInt(id),
-                `${property.address}, ${property.city}`,
-                changedFields,
-                getEventMetadata(request)
-              );
-            }
-          } catch (error) {
-            fastify.log.error('Failed to log property updated event:', error);
+          // Check for status change specifically (critical for properties)
+          if (updateData.status && existingProperty.status !== updateData.status) {
+            await eventService.logPropertyStatusChanged(
+              user.id,
+              parseInt(id),
+              `${property.address}, ${property.city}`,
+              existingProperty.status,
+              updateData.status,
+              metadata
+            );
           }
-        });
+
+          const hasOtherUpdates = Object.keys(updateData).some(key =>
+            key !== 'status' && updateData[key] !== undefined
+          );
+
+          if (hasOtherUpdates) {
+            await eventService.logPropertyUpdated(
+              user.id,
+              parseInt(id),
+              `${property.address}, ${property.city}`,
+              metadata // ← No changedFields parameter anymore
+            );
+          }
+        } catch (error) {
+          fastify.log.error('Failed to log property updated event:', error);
+        }
+      });
 
         return property;
       } catch (err) {

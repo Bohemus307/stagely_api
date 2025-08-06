@@ -328,8 +328,7 @@ export class EventService {
         userId: number,
         propertyId: number,
         propertyAddress: string,
-        changedFields: string[],
-        metadata?: EventMetadata
+        metadata?: EventMetadata  // ← No changedFields parameter
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -339,8 +338,8 @@ export class EventService {
             {
                 propertyId,
                 propertyAddress,
-                changedFields,
                 timestamp: new Date().toISOString()
+                // ← No changedFields in payload
             },
             metadata,
             propertyId.toString(),
@@ -355,8 +354,7 @@ export class EventService {
         userId: number,
         incidentId: number,
         propertyId: number,
-        changedFields: string[],
-        metadata?: EventMetadata
+        metadata?: EventMetadata  // ← No changedFields parameter
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -366,8 +364,8 @@ export class EventService {
             {
                 incidentId,
                 propertyId,
-                changedFields,
                 timestamp: new Date().toISOString()
+                // ← No changedFields in payload
             },
             metadata,
             incidentId.toString(),
@@ -382,8 +380,7 @@ export class EventService {
         userId: number,
         inspectionId: number,
         propertyId: number,
-        changedFields: string[],
-        metadata?: EventMetadata
+        metadata?: EventMetadata  // ← No changedFields parameter
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -393,8 +390,8 @@ export class EventService {
             {
                 inspectionId,
                 propertyId,
-                changedFields,
                 timestamp: new Date().toISOString()
+                // ← No changedFields in payload
             },
             metadata,
             inspectionId.toString(),

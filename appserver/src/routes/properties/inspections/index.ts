@@ -14,7 +14,7 @@ import {
 import { EventService } from "../../../services/eventService";
 import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../../repositories/userRepository";
-import { getEventMetadata, getChangedFields } from "../../../utils/eventHelpers";
+import { getEventMetadata } from "../../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {

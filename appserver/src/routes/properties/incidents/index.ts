@@ -1,13 +1,12 @@
 import { FastifyInstance } from "fastify";
 import { IncidentStatus, IncidentSeverity, SpaceType } from "@prisma/client";
 import { NotFoundError } from "../../../utils/errors";
-
 import { sendNotFound, sendUnauthorized } from "../../../utils/responses";
 import { IncidentService } from "../../../services/incidents";
 import { EventService } from "../../../services/eventService";
 import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../../repositories/userRepository";
-import { getEventMetadata, getChangedFields } from "../../../utils/eventHelpers";
+import { getEventMetadata } from "../../../utils/eventHelpers";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -357,8 +356,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const incident = await incidentService.getIncidentById(parseInt(id));
-        const startTime = Date.now();
-        const duration = Date.now() - startTime;
 
         // Verify property belongs to authenticated user
         const user = await fastify.prisma.user.findUnique({
@@ -535,54 +532,50 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           incidentData,
         );
 
-        // Log specific changes only
-        setImmediate(async () => {
-          try {
-            const metadata = getEventMetadata(request);
 
-            // Log status change if applicable
-            if (incidentData.status && existingIncident.status !== incidentData.status) {
-              await eventService.logIncidentStatusChanged(
-                user.id,
-                parseInt(id),
-                existingIncident.propertyId,
-                existingIncident.status,
-                incidentData.status,
-                metadata
-              );
-            }
+      setImmediate(async () => {
+        try {
+          const metadata = getEventMetadata(request);
 
-            // Log severity change if applicable
-            if (incidentData.severity && existingIncident.severity !== incidentData.severity) {
-              await eventService.logIncidentSeverityChanged(
-                user.id,
-                parseInt(id),
-                existingIncident.propertyId,
-                existingIncident.severity,
-                incidentData.severity,
-                metadata
-              );
-            }
-
-            // Log general update if other fields changed
-            const changedFields = getChangedFields(existingIncident, incident);
-            const nonCriticalFields = changedFields.filter(field =>
-              field !== 'status' && field !== 'severity'
+          // Log specific important changes (status and severity are critical)
+          if (incidentData.status && existingIncident.status !== incidentData.status) {
+            await eventService.logIncidentStatusChanged(
+              user.id,
+              parseInt(id),
+              existingIncident.propertyId,
+              existingIncident.status,
+              incidentData.status,
+              metadata
             );
-
-            if (nonCriticalFields.length > 0) {
-              await eventService.logIncidentUpdated(
-                user.id,
-                parseInt(id),
-                existingIncident.propertyId,
-                nonCriticalFields,
-                metadata
-              );
-            }
-          } catch (error) {
-            fastify.log.error('Failed to log incident update events:', error);
           }
-        });
+
+          if (incidentData.severity && existingIncident.severity !== incidentData.severity) {
+            await eventService.logIncidentSeverityChanged(
+              user.id,
+              parseInt(id),
+              existingIncident.propertyId,
+              existingIncident.severity,
+              incidentData.severity,
+              metadata
+            );
+          }
+
+          const hasOtherUpdates = Object.keys(incidentData).some(key =>
+            key !== 'status' && key !== 'severity' && incidentData[key] !== undefined
+          );
+
+          if (hasOtherUpdates) {
+            await eventService.logIncidentUpdated(
+              user.id,
+              parseInt(id),
+              existingIncident.propertyId,
+              metadata
+            );
+          }
+        } catch (error) {
+          fastify.log.error('Failed to log incident update events:', error);
+        }
+      });
 
         return incident;
       } catch (err) {

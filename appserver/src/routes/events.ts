@@ -24,7 +24,7 @@ async function eventRoutes(fastify: FastifyInstance) {
   /**
    * GET /events/user/:userId
    * Get events for a specific user with comprehensive date filtering
-   * This is the ONLY route needed for the simplified approach
+   * 
    */
   fastify.get('/user/:userId', {
     schema: {
