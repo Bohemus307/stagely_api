@@ -1,4 +1,4 @@
-import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
+import { Property, PropertyStatus, Prisma } from "@prisma/client";
 import {
   PropertyRepository,
   PropertyQueryParams,
@@ -8,6 +8,7 @@ import {
   UserPropertyStats,
 } from "../../repositories/propertyRepository";
 import { NotFoundError } from "../../utils/errors";
+import { EventMetadata } from "../../repositories/dynamoDB/eventsRepository";
 
 export interface CreatePropertyInput {
   address: string;
@@ -37,9 +38,9 @@ export interface UpdatePropertyInput {
 export class PropertyService {
   private propertyRepo: PropertyRepository;
 
-  constructor(prisma: PrismaClient) {
-    this.propertyRepo = new PropertyRepository(prisma);
-  }
+  constructor(propertyRepository: PropertyRepository) {
+  this.propertyRepo = propertyRepository;
+}
 
   /**
    * Get properties with pagination and filtering
@@ -76,8 +77,8 @@ export class PropertyService {
   /**
    * Get a property by ID
    */
-  async getPropertyById(id: number): Promise<PropertyWithFullRelations> {
-    const property = await this.propertyRepo.getPropertyById(id);
+  async getPropertyById(id: number, userId?: number, metadata?: EventMetadata): Promise<PropertyWithFullRelations> {
+    const property = await this.propertyRepo.getPropertyById(id, userId, metadata);
 
     if (!property) {
       throw new NotFoundError(`Property with ID ${id} not found`);
@@ -92,6 +93,8 @@ export class PropertyService {
   async createProperty(
     data: CreatePropertyInput,
     userId: number,
+    requestUserId?: number,
+    metadata?: EventMetadata
   ): Promise<Property> {
     // Business logic validations can go here
     const finalData = {
@@ -99,7 +102,7 @@ export class PropertyService {
       status: data.status || PropertyStatus.Active,
     };
 
-    return this.propertyRepo.createProperty(finalData, userId);
+    return this.propertyRepo.createProperty(finalData, userId, requestUserId, metadata);
   }
 
   /**
@@ -108,15 +111,17 @@ export class PropertyService {
   async updateProperty(
     id: number,
     data: UpdatePropertyInput,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Property> {
     // First check if property exists
-    const property = await this.propertyRepo.getPropertyById(id);
+    const property = await this.propertyRepo.getPropertyById(id, userId, metadata);
 
     if (!property) {
       throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
-    return this.propertyRepo.updateProperty(id, data);
+    return this.propertyRepo.updateProperty(id, data, userId, metadata);
   }
 
   /**
@@ -125,36 +130,40 @@ export class PropertyService {
   async changePropertyStatus(
     id: number,
     status: PropertyStatus,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Property> {
     // First check if property exists
-    const property = await this.propertyRepo.getPropertyById(id);
+    const property = await this.propertyRepo.getPropertyById(id, userId, metadata);
 
     if (!property) {
       throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
-    return this.propertyRepo.updateProperty(id, { status });
+    return this.propertyRepo.updateProperty(id, { status }, userId, metadata);
   }
 
   /**
    * Delete a property
    */
-  async deleteProperty(id: number): Promise<Property> {
+  async deleteProperty(id: number, userId?: number,
+    metadata?: EventMetadata): Promise<Property> {
     // First check if property exists
-    const property = await this.propertyRepo.getPropertyById(id);
+    const property = await this.propertyRepo.getPropertyById(id, userId, metadata);
 
     if (!property) {
       throw new NotFoundError(`Property with ID ${id} not found`);
     }
 
-    return this.propertyRepo.deleteProperty(id);
+    return this.propertyRepo.deleteProperty(id, userId, metadata);
   }
 
   /**
    * Get property statistics for a user
    */
-  async getUserPropertyStats(userId: number): Promise<UserPropertyStats> {
-    return this.propertyRepo.getUserPropertyStats(userId);
+  async getUserPropertyStats(userId: number, requestUserId?: number,
+    metadata?: EventMetadata): Promise<UserPropertyStats> {
+    return this.propertyRepo.getUserPropertyStats(userId, requestUserId, metadata);
   }
 
   /**

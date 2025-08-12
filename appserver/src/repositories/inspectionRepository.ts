@@ -4,6 +4,8 @@ import {
   PropertyImage,
   Prisma,
 } from "@prisma/client";
+import { EventService } from "../services/eventService";
+import { EventMetadata } from "./dynamoDB/eventsRepository";
 
 // Define query parameters for inspection listing
 export interface InspectionQueryParams {
@@ -30,6 +32,8 @@ export interface UpdateInspectionParams {
   title?: string;
   description?: string | null;
   inspectionDate?: Date;
+  status?: string;
+  completed?: boolean;
 }
 
 // Define image upload parameters
@@ -39,6 +43,7 @@ export interface UploadInspectionImageParams {
   caption?: string | null;
   takenAt: Date;
   spaceId?: number | null;
+  spaceType?: string | undefined;
   metadata?: any | null;
 }
 
@@ -96,9 +101,11 @@ export interface PaginatedResponse<T> {
  */
 export class InspectionRepository {
   private prisma: PrismaClient;
+  private eventService?: EventService;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: PrismaClient, eventService?: EventService) {
     this.prisma = prisma;
+    this.eventService = eventService;
   }
 
   /**
@@ -206,6 +213,8 @@ export class InspectionRepository {
    */
   async getInspectionById(
     id: number,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<InspectionWithFullDetails | null> {
     const inspection = await this.prisma.inspection.findUnique({
       where: { id },
@@ -234,14 +243,36 @@ export class InspectionRepository {
       },
     });
 
+    // Log inspection viewed event
+    if (this.eventService && userId && inspection) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logInspectionViewed(
+            userId,
+            inspection.id,
+            inspection.propertyId,
+            inspection.title,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log inspection view event:', error);
+        }
+      });
+    }
+
     return inspection as InspectionWithFullDetails | null;
   }
 
   /**
    * Create a new inspection
    */
-  async createInspection(data: CreateInspectionParams): Promise<Inspection> {
-    return this.prisma.inspection.create({
+  async createInspection(
+    data: CreateInspectionParams,
+    userId?: number,
+    requestUserId?: number,
+    metadata?: EventMetadata
+  ): Promise<Inspection> {
+    const inspection = await this.prisma.inspection.create({
       data: {
         propertyId: data.propertyId,
         title: data.title || "Inspection",
@@ -249,6 +280,23 @@ export class InspectionRepository {
         inspectionDate: data.inspectionDate,
       },
     });
+
+    // Log inspection created event
+    if (this.eventService && requestUserId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logInspectionUpdated(
+            requestUserId,
+            inspection.id,
+            inspection.propertyId,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log inspection creation event:', error);
+        }
+      });
+    }
+    return inspection;
   }
 
   /**
@@ -257,20 +305,92 @@ export class InspectionRepository {
   async updateInspection(
     id: number,
     data: UpdateInspectionParams,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Inspection> {
-    return this.prisma.inspection.update({
+    const existingInspection = await this.prisma.inspection.findUniqueOrThrow({
+      where: { id },
+      include: {
+        photos: true
+      }
+    });
+
+    // Perform the update
+    const updatedInspection = await this.prisma.inspection.update({
       where: { id },
       data,
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          // Check if inspection was completed
+          if (data.status === 'COMPLETED' || data.completed === true) {
+            const photoCount = existingInspection.photos.length;
+
+            await this.eventService!.logInspectionCompleted(
+              userId,
+              id,
+              existingInspection.propertyId,
+              existingInspection.title,
+              photoCount,
+              metadata
+            );
+          } else {
+            // Log general update
+            await this.eventService!.logInspectionUpdated(
+              userId,
+              id,
+              existingInspection.propertyId,
+              metadata
+            );
+          }
+        } catch (error) {
+          console.error('Failed to log inspection update events:', error);
+        }
+      });
+    }
+    return updatedInspection;
   }
 
   /**
    * Delete an inspection
    */
-  async deleteInspection(id: number): Promise<Inspection> {
-    return this.prisma.inspection.delete({
+  async deleteInspection(
+    id: number,
+    userId?: number,
+    metadata?: EventMetadata
+  ): Promise<Inspection> {
+    const existingInspection = await this.prisma.inspection.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        propertyId: true
+      }
+    });
+
+    const deletedInspection = await this.prisma.inspection.delete({
       where: { id },
     });
+
+    // Log inspection deletion
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logInspectionUpdated(
+            userId,
+            id,
+            existingInspection.propertyId,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log inspection deletion event:', error);
+        }
+      });
+    }
+
+    return deletedInspection;
   }
 
   /**
@@ -278,8 +398,20 @@ export class InspectionRepository {
    */
   async uploadInspectionImage(
     data: UploadInspectionImageParams,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<PropertyImage> {
-    return this.prisma.propertyImage.create({
+    // Get inspection info for event logging
+    const inspection = await this.prisma.inspection.findUniqueOrThrow({
+      where: { id: data.inspectionId },
+      select: {
+        id: true,
+        propertyId: true,
+        title: true
+      }
+    });
+
+    const uploadedImage = await this.prisma.propertyImage.create({
       data: {
         inspectionId: data.inspectionId,
         imageUrl: data.imageUrl,
@@ -289,6 +421,26 @@ export class InspectionRepository {
         metadata: data.metadata || undefined,
       },
     });
+
+    // Log photo upload event
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logInspectionPhotoUploaded(
+            userId,
+            data.inspectionId,
+            inspection.propertyId,
+            data.imageUrl,
+            data.spaceType,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log inspection photo upload event:', error);
+        }
+      });
+    }
+
+    return uploadedImage;
   }
 
   /**

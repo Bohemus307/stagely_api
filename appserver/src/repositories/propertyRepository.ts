@@ -1,4 +1,6 @@
 import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
+import { EventService } from "../services/eventService";
+import { EventMetadata } from "./dynamoDB/eventsRepository";
 
 // Define query parameters for property listing
 export interface PropertyQueryParams {
@@ -139,9 +141,11 @@ export interface UserPropertyStats {
  */
 export class PropertyRepository {
   private prisma: PrismaClient;
+  private eventService?: EventService;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: PrismaClient, eventService?: EventService) {
     this.prisma = prisma;
+    this.eventService = eventService;
   }
 
   /**
@@ -323,7 +327,7 @@ export class PropertyRepository {
   /**
    * Get a property by ID with all relations
    */
-  async getPropertyById(id: number): Promise<PropertyWithFullRelations | null> {
+  async getPropertyById(id: number, userId?: number, metadata?: EventMetadata): Promise<PropertyWithFullRelations | null> {
     const property = await this.prisma.property.findUnique({
       where: { id },
       include: {
@@ -378,6 +382,21 @@ export class PropertyRepository {
       },
     });
 
+    if (this.eventService && userId && property) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logPropertyViewed(
+            userId,
+            property.id,
+            property.address,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log property view event:', error);
+        }
+      });
+    }
+
     return property as PropertyWithFullRelations | null;
   }
 
@@ -396,14 +415,34 @@ export class PropertyRepository {
       status: PropertyStatus;
     },
     userId: number,
+    requestUserId?: number,
+    metadata?: EventMetadata
   ): Promise<Property> {
-    return this.prisma.property.create({
+    const property = await this.prisma.property.create({
       data: {
         ...data,
         userId,
       },
     });
+
+    if (this.eventService && requestUserId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logPropertyUpdated(
+            requestUserId,
+            property.id,
+            property.address,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log property creation event:', error);
+        }
+      });
+    }
+
+    return property;
   }
+
 
   /**
    * Update a property
@@ -420,26 +459,101 @@ export class PropertyRepository {
       longitude?: number | Prisma.Decimal;
       status?: PropertyStatus;
     },
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Property> {
-    return this.prisma.property.update({
+    // Get existing property for event comparison
+    const existingProperty = await this.prisma.property.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        address: true,
+        status: true
+      }
+    });
+
+    // Perform the update
+    const updatedProperty = await this.prisma.property.update({
       where: { id },
       data,
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          if (data.status && existingProperty.status !== data.status) {
+            await this.eventService!.logPropertyStatusChanged(
+              userId,
+              id,
+              existingProperty.address,
+              existingProperty.status,
+              data.status,
+              metadata
+            );
+          }
+
+          const hasOtherUpdates = Object.keys(data).some(key =>
+            key !== 'status' && data[key as keyof typeof data] !== undefined
+          );
+
+          if (hasOtherUpdates) {
+            await this.eventService!.logPropertyUpdated(
+              userId,
+              id,
+              existingProperty.address,
+              metadata
+            );
+          }
+        } catch (error) {
+          console.error('Failed to log property update events:', error);
+        }
+      });
+    }
+
+    return updatedProperty;
   }
+
 
   /**
    * Delete a property
    */
-  async deleteProperty(id: number): Promise<Property> {
-    return this.prisma.property.delete({
+  async deleteProperty(id: number, userId?: number, metadata?: EventMetadata): Promise<Property> {
+    // Get property info before deletion for events
+    const existingProperty = await this.prisma.property.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        address: true,
+        city: true
+      }
+    });
+
+    const deletedProperty = await this.prisma.property.delete({
       where: { id },
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logPropertyUpdated(
+            userId,
+            id,
+            existingProperty.address,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log property deletion event:', error);
+        }
+      });
+    }
+
+    return deletedProperty;
   }
 
   /**
    * Get property statistics for a user
    */
-  async getUserPropertyStats(userId: number): Promise<UserPropertyStats> {
+  async getUserPropertyStats(userId: number, requestUserId?: number, metadata?: EventMetadata): Promise<UserPropertyStats> {
     // Get total properties count
     const totalProperties = await this.prisma.property.count({
       where: { userId },
@@ -473,7 +587,7 @@ export class PropertyRepository {
       },
     });
 
-    return {
+    const stats = {
       totalProperties,
       activeProperties,
       maintenanceProperties,
@@ -481,7 +595,26 @@ export class PropertyRepository {
       totalIncidents,
       openIncidents,
     };
+
+    if (this.eventService && requestUserId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logPropertyStatsViewed(
+            requestUserId,
+            totalProperties,
+            activeProperties,
+            totalIncidents,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log property stats viewed event:', error);
+        }
+      });
+    }
+
+    return stats;
   }
+
 
   /**
    * Get property spaces

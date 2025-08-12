@@ -1,5 +1,4 @@
 import {
-  PrismaClient,
   Incident,
   IncidentStatus,
   IncidentSeverity,
@@ -21,6 +20,7 @@ import { SpaceClassificationResult } from "../../repositories/propertySpacesRepo
 import { SpaceClassificationService } from "../properties/spaces/classification";
 import { IncidentClassificationService } from "./comparison";
 import { S3Config } from "./comparison/comparisonTypes";
+import { EventMetadata } from "../../repositories/dynamoDB/eventsRepository";
 
 // Define incident create/update input types with specific types
 export interface CreateIncidentInput {
@@ -62,10 +62,10 @@ export class IncidentService {
   private incidentClassificationService: IncidentClassificationService;
 
   constructor(
-    prisma: PrismaClient,
+    incidentRepository: IncidentRepository,
     s3: { client: S3Client; bucket: string; region: string },
   ) {
-    this.incidentRepo = new IncidentRepository(prisma, s3);
+    this.incidentRepo = incidentRepository;
     this.s3 = s3;
     this.spaceClassificationService = new SpaceClassificationService(s3);
 
@@ -92,8 +92,8 @@ export class IncidentService {
   /**
    * Get an incident by ID
    */
-  async getIncidentById(id: number): Promise<IncidentWithFullRelations> {
-    const incident = await this.incidentRepo.getIncidentById(id);
+  async getIncidentById(id: number, userId?: number, metadata?: EventMetadata): Promise<IncidentWithFullRelations> {
+    const incident = await this.incidentRepo.getIncidentById(id, userId, metadata);
 
     if (!incident) {
       throw new NotFoundError(`Incident with ID ${id} not found`);
@@ -173,9 +173,11 @@ export class IncidentService {
   async updateIncident(
     id: number,
     data: UpdateIncidentInput,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Incident> {
     // First check if incident exists
-    const incident = await this.incidentRepo.getIncidentById(id);
+    const incident = await this.incidentRepo.getIncidentById(id, userId, metadata);
 
     if (!incident) {
       throw new NotFoundError(`Incident with ID ${id} not found`);
@@ -196,11 +198,15 @@ export class IncidentService {
     // Handle image updates separately if provided
     const { images, ...incidentData } = parsedData;
 
+    const updatedIncident = await this.incidentRepo.updateIncident(id, incidentData, userId, metadata);
     // Update the incident
     await this.incidentRepo.updateIncidentStatus(
       id,
       incidentData.status || incident.status,
       incidentData.resolvedAt,
+      userId,
+      metadata
+
     );
 
     // If there are any images to add
@@ -214,6 +220,7 @@ export class IncidentService {
             imageUrl: img.imageUrl,
             caption: img.caption,
             takenAt: img.takenAt ? new Date(img.takenAt) : new Date(),
+
           })),
         );
 
@@ -245,7 +252,7 @@ export class IncidentService {
               spaceType: (detectionResult.spaceType as SpaceType) || undefined,
               featureVector: detectionResult.featureVector || Prisma.JsonNull,
               aiClassified: true,
-            });
+            }, userId, metadata);
           } catch (error) {
             console.error(
               "Error reclassifying incident after adding images:",
@@ -257,7 +264,7 @@ export class IncidentService {
       }
     }
 
-    return this.getIncidentById(id);
+    return this.getIncidentById(id, userId, metadata);
   }
 
   /**
@@ -267,9 +274,11 @@ export class IncidentService {
     id: number,
     status: IncidentStatus,
     resolvedAt?: Date | string | null,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Incident> {
     // First check if incident exists
-    const incident = await this.incidentRepo.getIncidentById(id);
+    const incident = await this.incidentRepo.getIncidentById(id, userId, metadata);
 
     if (!incident) {
       throw new NotFoundError(`Incident with ID ${id} not found`);
@@ -284,7 +293,7 @@ export class IncidentService {
         ? new Date()
         : null;
 
-    return this.incidentRepo.updateIncidentStatus(id, status, parsedResolvedAt);
+    return this.incidentRepo.updateIncidentStatus(id, status, parsedResolvedAt, userId, metadata);
   }
 
   /**
@@ -321,9 +330,11 @@ export class IncidentService {
       caption?: string;
       takenAt?: Date | string;
     }[],
+    userId?: number,
+    requestMetadata?: EventMetadata
   ) {
     // First check if incident exists
-    const incident = await this.incidentRepo.getIncidentById(id);
+    const incident = await this.incidentRepo.getIncidentById(id, userId, requestMetadata);
 
     if (!incident) {
       throw new NotFoundError(`Incident with ID ${id} not found`);
@@ -335,6 +346,8 @@ export class IncidentService {
         ...img,
         takenAt: img.takenAt ? new Date(img.takenAt) : new Date(),
       })),
+      userId,
+      requestMetadata
     );
 
     // After adding images, reclassify the incident
@@ -364,7 +377,7 @@ export class IncidentService {
           spaceType: (detectionResult.spaceType as SpaceType) || undefined,
           featureVector: detectionResult.featureVector || Prisma.JsonNull,
           aiClassified: true,
-        });
+        }, userId, requestMetadata);
       } catch (error) {
         console.error("Error classifying incident after adding images:", error);
         // Continue even if classification fails

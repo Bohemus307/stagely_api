@@ -14,6 +14,8 @@ import {
 import { EventService } from "../../../services/eventService";
 import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../../repositories/userRepository";
+import { PropertyRepository } from "../../../repositories/propertyRepository";
+import { InspectionRepository } from "../../../repositories/inspectionRepository";
 import { getEventMetadata } from "../../../utils/eventHelpers";
 
 // Define route parameter types
@@ -31,16 +33,22 @@ interface PropertyIdParams {
  * @param fastify - The Fastify instance
  */
 async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
-  // Get service instances with Prisma
-  const inspectionService = new InspectionService(fastify.prisma);
-  const propertyService = new PropertyService(fastify.prisma);
+  // Initialize services with event integration
   const eventService = new EventService(
-        new DynamoDBEventRepository(
-            fastify.dynamoDB.documentClient,
-            process.env.NODE_ENV || 'staging'
-        ),
-        new UserRepository(fastify.prisma)
-    );
+    new DynamoDBEventRepository(
+      fastify.dynamoDB.documentClient,
+      process.env.NODE_ENV || 'staging'
+    ),
+    new UserRepository(fastify.prisma)
+  );
+
+  // Initialize repositories with event service
+  const inspectionRepository = new InspectionRepository(fastify.prisma, eventService);
+  const propertyRepository = new PropertyRepository(fastify.prisma, eventService);
+
+  // Initialize services with repositories
+  const inspectionService = new InspectionService(inspectionRepository);
+  const propertyService = new PropertyService(propertyRepository);
 
   // GET /inspections
   fastify.route({
@@ -206,9 +214,6 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
-        const inspection = await inspectionService.getInspectionById(
-          parseInt(id),
-        );
 
         // Get user from auth token
         const user = await fastify.prisma.user.findUnique({
@@ -219,9 +224,16 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           return sendUnauthorized(reply, "User not found");
         }
 
+        const inspection = await inspectionService.getInspectionById(
+          parseInt(id),
+          user.id,
+          getEventMetadata(request)
+        );
         // Get the property to verify ownership
         const property = await propertyService.getPropertyById(
           inspection.propertyId,
+          user.id,
+          getEventMetadata(request)
         );
 
         if (property.userId !== user.id) {
@@ -230,21 +242,6 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this inspection",
           );
         }
-
-        // Log inspection viewed
-        setImmediate(async () => {
-      try {
-        await eventService.logInspectionViewed(
-          user.id,
-          inspection.id,
-          inspection.propertyId,
-          inspection.title,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log inspection view:', error);
-      }
-    });
 
         return inspection;
       } catch (err) {
@@ -370,6 +367,8 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         // Get the property to verify ownership
         const property = await propertyService.getPropertyById(
           existingInspection.propertyId,
+          user.id,
+          getEventMetadata(request)
         );
 
         if (property.userId !== user.id) {
@@ -382,29 +381,9 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         const updatedInspection = await inspectionService.updateInspection(
           parseInt(id),
           updateData,
+          user.id,
+          getEventMetadata(request)
         );
-
-        // ✅ CRITICAL EVENT: Check if inspection was completed
-        if (updateData.status === 'COMPLETED' || updateData.completed === true) {
-    // Get photo count using the correct method
-    const inspectionImages = await inspectionService.getInspectionImages(parseInt(id));
-    const photoCount = inspectionImages.length;
-
-    setImmediate(async () => {
-        try {
-            await eventService.logInspectionCompleted(
-                user.id,
-                parseInt(id),
-                existingInspection.propertyId,
-                existingInspection.title,
-                photoCount,
-                getEventMetadata(request)
-            );
-        } catch (error) {
-            fastify.log.error('Failed to log inspection completed event:', error);
-        }
-    });
-}
 
         return updatedInspection;
       } catch (err) {
@@ -480,6 +459,8 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         // Get the property to verify ownership
         const property = await propertyService.getPropertyById(
           existingInspection.propertyId,
+          user.id,
+          getEventMetadata(request)
         );
 
         if (property.userId !== user.id) {
@@ -489,7 +470,11 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        await inspectionService.deleteInspection(parseInt(id));
+        await inspectionService.deleteInspection(
+          parseInt(id),
+          user.id,
+          getEventMetadata(request)
+        );
 
         return { success: true, id: parseInt(id) };
       } catch (err) {
@@ -573,6 +558,8 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         // Get the property to verify ownership
         const property = await propertyService.getPropertyById(
           existingInspection.propertyId,
+          user.id,
+          getEventMetadata(request)
         );
 
         if (property.userId !== user.id) {
@@ -585,23 +572,10 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
         const uploadedImage = await inspectionService.uploadInspectionImage({
           ...imageData,
           inspectionId: parseInt(id),
-        });
-
-        // Log inspection photo uploaded
-        setImmediate(async () => {
-      try {
-        await eventService.logInspectionPhotoUploaded(
-          user.id,
-          parseInt(id),
-          existingInspection.propertyId,
-          imageData.imageUrl,
-          imageData.spaceType,
-          getEventMetadata(request)
+        },
+        user.id,
+        getEventMetadata(request)
         );
-      } catch (error) {
-        fastify.log.error('Failed to log inspection photo upload:', error);
-      }
-    });
 
         reply.code(201);
         return uploadedImage;
@@ -709,23 +683,6 @@ async function inspectionRoutes(fastify: FastifyInstance): Promise<void> {
           parseInt(id),
           images,
         );
-
-          // Log bulk photos uploaded for progress tracking
-        setImmediate(async () => {
-      try {
-        const uploadedBytes = images.length * 2000000; // Rough estimate: 2MB per image
-        await eventService.logInspectionBulkPhotosUploaded(
-          user.id,
-          parseInt(id),
-          existingInspection.propertyId,
-          images.length,
-          uploadedBytes,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log bulk photo upload:', error);
-      }
-    });
 
         reply.code(201);
         return {

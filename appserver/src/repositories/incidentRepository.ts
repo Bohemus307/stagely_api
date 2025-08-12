@@ -8,6 +8,8 @@ import {
   PropertyImage,
   Prisma,
 } from "@prisma/client";
+import { EventService } from "../services/eventService";
+import { EventMetadata } from "./dynamoDB/eventsRepository";
 
 // Define types for query parameters
 export interface IncidentQueryParams {
@@ -78,13 +80,16 @@ export interface IncidentStats {
 export class IncidentRepository {
   private prisma: PrismaClient;
   private s3: { client: S3Client; bucket: string; region: string };
+  private eventService?: EventService;
 
   constructor(
     prisma: PrismaClient,
     s3: { client: S3Client; bucket: string; region: string },
+    eventService?: EventService
   ) {
     this.prisma = prisma;
     this.s3 = s3;
+    this.eventService = eventService;
   }
 
   /**
@@ -175,15 +180,34 @@ export class IncidentRepository {
   /**
    * Get incident by ID with all related data
    */
-  async getIncidentById(id: number): Promise<IncidentWithFullRelations> {
-    return this.prisma.incident.findUniqueOrThrow({
+  async getIncidentById(id: number, userId?: number, metadata?: EventMetadata): Promise<IncidentWithFullRelations> {
+    const incident = await this.prisma.incident.findUniqueOrThrow({
       where: { id },
       include: {
         property: true,
         images: true,
       },
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          await this.eventService!.logIncidentViewed(
+            userId,
+            incident.id,
+            incident.propertyId,
+            incident.incidentType,
+            metadata
+          );
+        } catch (error) {
+          console.error('Failed to log incident view event:', error);
+        }
+      });
+    }
+
+    return incident;
   }
+
 
   /**
    * Associate object labels with an existing space
@@ -248,11 +272,73 @@ export class IncidentRepository {
   async updateIncident(
     id: number,
     data: Prisma.IncidentUpdateInput,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Incident> {
-    return this.prisma.incident.update({
+    // Get existing incident for event comparison
+    const existingIncident = await this.prisma.incident.findUniqueOrThrow({
+      where: { id },
+      select: {
+        id: true,
+        propertyId: true,
+        status: true,
+        severity: true
+      }
+    });
+
+    // Perform the update
+    const updatedIncident = await this.prisma.incident.update({
       where: { id },
       data,
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          // Log status change if applicable
+          if (data.status && existingIncident.status !== data.status) {
+            await this.eventService!.logIncidentStatusChanged(
+              userId,
+              id,
+              existingIncident.propertyId,
+              existingIncident.status,
+              data.status as string,
+              metadata
+            );
+          }
+
+          // Log severity change if applicable
+          if (data.severity && existingIncident.severity !== data.severity) {
+            await this.eventService!.logIncidentSeverityChanged(
+              userId,
+              id,
+              existingIncident.propertyId,
+              existingIncident.severity,
+              data.severity as string,
+              metadata
+            );
+          }
+
+          // Log general update for other changes
+          const hasOtherUpdates = Object.keys(data).some(key =>
+            key !== 'status' && key !== 'severity'
+          );
+
+          if (hasOtherUpdates) {
+            await this.eventService!.logIncidentUpdated(
+              userId,
+              id,
+              existingIncident.propertyId,
+              metadata
+            );
+          }
+        } catch (error) {
+          console.error('Failed to log incident update events:', error);
+        }
+      });
+    }
+
+    return updatedIncident;
   }
 
   /**
@@ -272,6 +358,8 @@ export class IncidentRepository {
     id: number,
     status: IncidentStatus,
     resolvedAt: Date | null = null,
+    userId?: number,
+    metadata?: EventMetadata,
   ): Promise<Incident> {
     return this.prisma.$transaction(async (tx) => {
       // Get current incident
@@ -326,6 +414,23 @@ export class IncidentRepository {
         });
       }
 
+      if (this.eventService && userId) {
+        setImmediate(async () => {
+          try {
+            await this.eventService!.logIncidentStatusChanged(
+              userId,
+              id,
+              currentIncident.propertyId,
+              currentIncident.status,
+              status,
+              metadata
+            );
+          } catch (error) {
+            console.error('Failed to log incident status change event:', error);
+          }
+        });
+      }
+
       return incident;
     });
   }
@@ -372,7 +477,15 @@ export class IncidentRepository {
   async addIncidentImages(
     incidentId: number,
     images: { imageUrl: string; caption?: string; takenAt?: Date }[],
+    userId?: number,
+    requestMetadata?: EventMetadata,
   ): Promise<PropertyImage[]> {
+    // Get incident for property ID (needed for events)
+    const incident = await this.prisma.incident.findUniqueOrThrow({
+      where: { id: incidentId },
+      select: { propertyId: true }
+    });
+
     await this.prisma.propertyImage.createMany({
       data: images.map((img) => ({
         incidentId,
@@ -382,9 +495,33 @@ export class IncidentRepository {
       })),
     });
 
-    return this.prisma.propertyImage.findMany({
+    const createdImages = await this.prisma.propertyImage.findMany({
       where: { incidentId },
+      orderBy: { createdAt: 'desc' },
+      take: images.length,
     });
+
+    if (this.eventService && userId) {
+      setImmediate(async () => {
+        try {
+          const imageEvents = images.map(img =>
+            this.eventService!.logIncidentImageUploaded(
+              userId,
+              incidentId,
+              incident.propertyId,
+              img.imageUrl,
+              requestMetadata
+            )
+          );
+
+          await Promise.all(imageEvents);
+        } catch (error) {
+          console.error('Failed to log incident image upload events:', error);
+        }
+      });
+    }
+
+    return createdImages;
   }
 
   /**

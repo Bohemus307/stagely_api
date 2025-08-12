@@ -1,10 +1,7 @@
-// src/repositories/dynamoDB/eventsRepository.ts
 import {
     PutCommand,
     GetCommand,
     QueryCommand,
-    DeleteCommand,
-    ScanCommand,
     BatchWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { TableNames } from "../../config/dynamoTables";
@@ -38,7 +35,6 @@ export enum EventType {
     INSPECTION_VIEWED = 'inspection_viewed',
     INSPECTION_UPDATED = 'inspection_updated',
     INSPECTION_PHOTO_UPLOADED = 'inspection_photo_uploaded',
-    INSPECTION_BULK_PHOTOS_UPLOADED = 'inspection_bulk_photos_uploaded'
 }
 
 export interface EventMetadata {

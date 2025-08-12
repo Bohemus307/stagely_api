@@ -3,6 +3,7 @@ import { IncidentStatus, IncidentSeverity, SpaceType } from "@prisma/client";
 import { NotFoundError } from "../../../utils/errors";
 import { sendNotFound, sendUnauthorized } from "../../../utils/responses";
 import { IncidentService } from "../../../services/incidents";
+import { IncidentRepository } from "../../../repositories/incidentRepository";
 import { EventService } from "../../../services/eventService";
 import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../../repositories/userRepository";
@@ -24,16 +25,24 @@ interface StatusUpdateBody {
  * @param fastify - The Fastify instance
  */
 async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
-  // Get service instance with Prisma
-  const incidentService = new IncidentService(fastify.prisma, fastify.s3);
-
   const eventService = new EventService(
-        new DynamoDBEventRepository(
-            fastify.dynamoDB.documentClient,
-            process.env.NODE_ENV || 'staging'
-        ),
-        new UserRepository(fastify.prisma)
-    );
+    new DynamoDBEventRepository(
+      fastify.dynamoDB.documentClient,
+      process.env.NODE_ENV || 'staging'
+    ),
+    new UserRepository(fastify.prisma)
+  );
+
+  const incidentRepository = new IncidentRepository(
+    fastify.prisma,
+    fastify.s3,
+    eventService
+  );
+
+  const incidentService = new IncidentService(
+    incidentRepository,
+    fastify.s3
+  );
 
   // GET /incidents
   fastify.route({
@@ -355,13 +364,18 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
-        const incident = await incidentService.getIncidentById(parseInt(id));
 
         // Verify property belongs to authenticated user
-        const user = await fastify.prisma.user.findUnique({
+        const user = await fastify.prisma.user.findUniqueOrThrow({
           where: { auth0Id: request?.user?.sub },
         });
 
+        const incident = await incidentService.getIncidentById(
+          parseInt(id),
+          user.id,
+          getEventMetadata(request)
+
+        );
         // Get the property to check ownership
         const property = await fastify.prisma.property.findUnique({
           where: { id: incident.propertyId },
@@ -374,22 +388,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this incident",
           );
         }
-
-        // Log incident viewed for mobile app prefetching
-        setImmediate(async () => {
-      try {
-        await eventService.logIncidentViewed(
-          user.id,
-          incident.id,
-          incident.propertyId,
-          incident.incidentType,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log incident view event:', error);
-      }
-    });
-
 
         return incident;
       } catch (err) {
@@ -532,51 +530,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           incidentData,
         );
 
-
-      setImmediate(async () => {
-        try {
-          const metadata = getEventMetadata(request);
-
-          // Log specific important changes (status and severity are critical)
-          if (incidentData.status && existingIncident.status !== incidentData.status) {
-            await eventService.logIncidentStatusChanged(
-              user.id,
-              parseInt(id),
-              existingIncident.propertyId,
-              existingIncident.status,
-              incidentData.status,
-              metadata
-            );
-          }
-
-          if (incidentData.severity && existingIncident.severity !== incidentData.severity) {
-            await eventService.logIncidentSeverityChanged(
-              user.id,
-              parseInt(id),
-              existingIncident.propertyId,
-              existingIncident.severity,
-              incidentData.severity,
-              metadata
-            );
-          }
-
-          const hasOtherUpdates = Object.keys(incidentData).some(key =>
-            key !== 'status' && key !== 'severity' && incidentData[key] !== undefined
-          );
-
-          if (hasOtherUpdates) {
-            await eventService.logIncidentUpdated(
-              user.id,
-              parseInt(id),
-              existingIncident.propertyId,
-              metadata
-            );
-          }
-        } catch (error) {
-          fastify.log.error('Failed to log incident update events:', error);
-        }
-      });
-
         return incident;
       } catch (err) {
         if (err instanceof NotFoundError) {
@@ -697,22 +650,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           status,
           resolvedAt,
         );
-
-        // Log status change
-        setImmediate(async () => {
-      try {
-        await eventService.logIncidentStatusChanged(
-          user.id,
-          parseInt(id),
-          existingIncident.propertyId,
-          existingIncident.status,
-          status,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log incident status change events:', error);
-      }
-    });
 
         return incident;
       } catch (err) {
@@ -908,25 +845,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           parseInt(id),
           images,
         );
-
-        // Log image uploads for processing
-        setImmediate(async () => {
-          try {
-            const imageEvents = images.map(img =>
-              eventService.logIncidentImageUploaded(
-                user.id,
-                parseInt(id),
-                existingIncident.propertyId,
-                img.imageUrl,
-                getEventMetadata(request)
-              )
-            );
-
-            await Promise.all(imageEvents);
-          } catch (error) {
-            fastify.log.error('Failed to log incident image upload events:', error);
-          }
-        });
 
         return result;
       } catch (err) {

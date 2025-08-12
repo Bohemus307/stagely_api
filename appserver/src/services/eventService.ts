@@ -1,4 +1,3 @@
-// src/services/eventService.ts
 import { DynamoDBEventRepository, EventType, EventCategory, DynamoDBEvent, EventMetadata } from '../repositories/dynamoDB/eventsRepository';
 import { UserRepository } from '../repositories/userRepository';
 import { NotFoundError } from '../utils/errors';
@@ -39,7 +38,6 @@ export class EventService {
             [EventType.INSPECTION_VIEWED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_UPDATED]: EventCategory.INSPECTION,
             [EventType.INSPECTION_PHOTO_UPLOADED]: EventCategory.INSPECTION,
-            [EventType.INSPECTION_BULK_PHOTOS_UPLOADED]: EventCategory.INSPECTION,
 
         };
 
@@ -113,7 +111,7 @@ export class EventService {
     // ===========================================
 
     /**
-     * Log property viewed - triggers prefetching
+     * Log property viewed
      */
     async logPropertyViewed(
         userId: number,
@@ -178,7 +176,7 @@ export class EventService {
     }
 
     /**
-     * Log inspection viewed - triggers prefetching
+     * Log inspection viewed
      */
     async logInspectionViewed(
         userId: number,
@@ -197,7 +195,7 @@ export class EventService {
                 propertyId,
                 inspectionTitle,
                 timestamp: new Date().toISOString(),
-                // Prefetch hints for mobile app
+
                 prefetchHints: {
                     photos: true,
                     relatedInspections: true,
@@ -212,7 +210,7 @@ export class EventService {
     }
 
     /**
-     * Log incident status changed - immediate UI update
+     * Log incident status changed
      */
     async logIncidentStatusChanged(
         userId: number,
@@ -233,7 +231,7 @@ export class EventService {
                 oldStatus,
                 newStatus,
                 timestamp: new Date().toISOString(),
-                // UI update hints
+
                 uiUpdateHints: {
                     refreshIncidentList: true,
                     updateIncidentDetail: true,
@@ -247,7 +245,7 @@ export class EventService {
     }
 
     /**
-     * Log incident severity changed - immediate UI update
+     * Log incident severity changed
      */
     async logIncidentSeverityChanged(
         userId: number,
@@ -268,7 +266,7 @@ export class EventService {
                 oldSeverity,
                 newSeverity,
                 timestamp: new Date().toISOString(),
-                // UI update hints
+
                 uiUpdateHints: {
                     refreshIncidentList: true,
                     updateIncidentDetail: true,
@@ -283,7 +281,7 @@ export class EventService {
     }
 
     /**
-     * Log inspection completed - triggers sync
+     * Log inspection completed
      */
     async logInspectionCompleted(
         userId: number,
@@ -304,7 +302,7 @@ export class EventService {
                 inspectionTitle,
                 photoCount,
                 timestamp: new Date().toISOString(),
-                // Sync hints
+
                 syncHints: {
                     uploadPhotos: true,
                     processClassification: true,
@@ -322,13 +320,13 @@ export class EventService {
     // ===========================================
 
     /**
-     * Log when a property is updated (general updates)
+     * Log when a property is updated
      */
     async logPropertyUpdated(
         userId: number,
         propertyId: number,
         propertyAddress: string,
-        metadata?: EventMetadata  // ← No changedFields parameter
+        metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -339,7 +337,7 @@ export class EventService {
                 propertyId,
                 propertyAddress,
                 timestamp: new Date().toISOString()
-                // ← No changedFields in payload
+
             },
             metadata,
             propertyId.toString(),
@@ -348,13 +346,13 @@ export class EventService {
     }
 
     /**
-     * Log when an incident is updated (general updates)
+     * Log when an incident is updated
      */
     async logIncidentUpdated(
         userId: number,
         incidentId: number,
         propertyId: number,
-        metadata?: EventMetadata  // ← No changedFields parameter
+        metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -365,7 +363,7 @@ export class EventService {
                 incidentId,
                 propertyId,
                 timestamp: new Date().toISOString()
-                // ← No changedFields in payload
+
             },
             metadata,
             incidentId.toString(),
@@ -374,13 +372,13 @@ export class EventService {
     }
 
     /**
-     * Log when an inspection is updated (general updates)
+     * Log when an inspection is updated
      */
     async logInspectionUpdated(
         userId: number,
         inspectionId: number,
         propertyId: number,
-        metadata?: EventMetadata  // ← No changedFields parameter
+        metadata?: EventMetadata
     ): Promise<DynamoDBEvent> {
         return this.createEvent(
             userId,
@@ -391,7 +389,7 @@ export class EventService {
                 inspectionId,
                 propertyId,
                 timestamp: new Date().toISOString()
-                // ← No changedFields in payload
+
             },
             metadata,
             inspectionId.toString(),
@@ -402,42 +400,6 @@ export class EventService {
     // ===========================================
     // MEDIUM PRIORITY EVENTS
     // ===========================================
-
-    /**
-     * Log bulk photos uploaded - progress tracking
-     */
-    async logInspectionBulkPhotosUploaded(
-        userId: number,
-        inspectionId: number,
-        propertyId: number,
-        photoCount: number,
-        uploadedBytes: number,
-        metadata?: EventMetadata
-    ): Promise<DynamoDBEvent> {
-        return this.createEvent(
-            userId,
-            EventType.INSPECTION_BULK_PHOTOS_UPLOADED,
-            'Bulk Photos Uploaded',
-            `${photoCount} photos uploaded for inspection`,
-            {
-                inspectionId,
-                propertyId,
-                photoCount,
-                uploadedBytes,
-                timestamp: new Date().toISOString(),
-                // Progress tracking
-                progressHints: {
-                    totalPhotos: photoCount,
-                    completedPhotos: photoCount,
-                    totalBytes: uploadedBytes,
-                    processingRequired: true
-                }
-            },
-            metadata,
-            inspectionId.toString(),
-            'inspection'
-        );
-    }
 
     /**
      * Log inspection photo uploaded
@@ -461,7 +423,7 @@ export class EventService {
                 imageUrl,
                 spaceType,
                 timestamp: new Date().toISOString(),
-                // Processing hints
+
                 processingHints: {
                     runClassification: true,
                     generateThumbnails: true,
@@ -494,7 +456,7 @@ export class EventService {
                 propertyId,
                 imageUrl,
                 timestamp: new Date().toISOString(),
-                // Processing hints
+
                 processingHints: {
                     runClassification: true,
                     generateThumbnails: true,
@@ -508,7 +470,7 @@ export class EventService {
     }
 
     /**
-     * Log property status changed - immediate UI update
+     * Log property status changed
      */
     async logPropertyStatusChanged(
         userId: number,
@@ -529,7 +491,7 @@ export class EventService {
                 oldStatus,
                 newStatus,
                 timestamp: new Date().toISOString(),
-                // UI update hints
+
                 uiUpdateHints: {
                     refreshPropertyList: true,
                     updatePropertyDetail: true,
@@ -543,7 +505,7 @@ export class EventService {
     }
 
     /**
-     * Log property stats viewed - triggers prefetching
+     * Log property stats viewed
      */
     async logPropertyStatsViewed(
         userId: number,
@@ -581,7 +543,7 @@ export class EventService {
     // ===========================================
 
     /**
-     * Get events for a specific user (simplified - date filtering only)
+     * Get events for a specific user
      */
     async getEventsForUser(
         userId: number,

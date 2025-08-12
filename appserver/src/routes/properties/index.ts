@@ -17,6 +17,8 @@ import { EventService } from "../../services/eventService";
 import { DynamoDBEventRepository } from "../../repositories/dynamoDB/eventsRepository";
 import { UserRepository } from "../../repositories/userRepository";
 import { getEventMetadata } from "../../utils/eventHelpers";
+import { PropertyRepository } from "../../repositories/propertyRepository";
+
 
 // Define route parameter types
 interface ParamsWithId {
@@ -34,16 +36,20 @@ interface StatusUpdateBody {
  * @param options - Route options
  */
 async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
-  // Get service instance with Prisma
-  const propertyService = new PropertyService(fastify.prisma);
-
   const eventService = new EventService(
-        new DynamoDBEventRepository(
-            fastify.dynamoDB.documentClient,
-            process.env.NODE_ENV || 'staging'
-        ),
-        new UserRepository(fastify.prisma)
-    );
+    new DynamoDBEventRepository(
+      fastify.dynamoDB.documentClient,
+      process.env.NODE_ENV || 'staging'
+    ),
+    new UserRepository(fastify.prisma)
+  );
+
+  const propertyRepository = new PropertyRepository(
+    fastify.prisma,
+    eventService
+  );
+
+  const propertyService = new PropertyService(propertyRepository);
 
   // GET /properties/search
   fastify.route({
@@ -264,14 +270,17 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
-        const property = await propertyService.getPropertyById(parseInt(id));
-        const startTime = Date.now();
-        const duration = Date.now() - startTime;
 
         // Verify property belongs to authenticated user
-        const user = await fastify.prisma.user.findUnique({
+        const user = await fastify.prisma.user.findUniqueOrThrow({
           where: { auth0Id: request?.user?.sub },
         });
+
+        const property = await propertyService.getPropertyById(
+          parseInt(id),
+          user.id,
+          getEventMetadata(request)
+        );
 
         if (!user || property.userId !== user.id) {
           return sendUnauthorized(
@@ -279,20 +288,6 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
             "You don't have permission to access this property",
           );
         }
-
-        // Log property viewed
-        setImmediate(async () => {
-      try {
-        await eventService.logPropertyViewed(
-          user.id,
-          property.id,
-          property.address,
-          getEventMetadata(request)
-        );
-      } catch (error) {
-        fastify.log.error('Failed to log property view:', error);
-      }
-    });
 
         return property;
       } catch (err) {
@@ -337,18 +332,20 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       try {
         // Get the user from the database based on Auth0 ID
-        const user = await fastify.prisma.user.findUnique({
+        const user = await fastify.prisma.user.findUniqueOrThrow({
           where: { auth0Id: request?.user?.sub },
         });
-
-        if (!user) {
-          return sendUnauthorized(reply, "User not found");
-        }
 
         const property = await propertyService.createProperty(
           request.body as any,
           user.id,
+          user.id,
+          getEventMetadata(request)
         );
+
+        if (!user) {
+          return sendUnauthorized(reply, "User not found");
+        }
 
         reply.code(201);
         return property;
@@ -406,15 +403,17 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
       const { id } = request.params as ParamsWithId;
 
       try {
+        const user = await fastify.prisma.user.findUniqueOrThrow({
+          where: { auth0Id: request?.user?.sub },
+        });
+
         // First check if property exists
         const existingProperty = await propertyService.getPropertyById(
           parseInt(id),
+          user.id,
+          getEventMetadata(request)
         );
 
-        // Verify property belongs to authenticated user
-        const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
-        });
 
         if (!user || existingProperty.userId !== user.id) {
           return sendUnauthorized(
@@ -423,45 +422,13 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        const updateData = request.body as any;
+
         const property = await propertyService.updateProperty(
           parseInt(id),
-          updateData,
+          request.body as any, //Change from any?
+          user.id,
+          getEventMetadata(request)
         );
-        
-        //log property updated
-        setImmediate(async () => {
-        try {
-          const metadata = getEventMetadata(request);
-
-          // Check for status change specifically (critical for properties)
-          if (updateData.status && existingProperty.status !== updateData.status) {
-            await eventService.logPropertyStatusChanged(
-              user.id,
-              parseInt(id),
-              `${property.address}, ${property.city}`,
-              existingProperty.status,
-              updateData.status,
-              metadata
-            );
-          }
-
-          const hasOtherUpdates = Object.keys(updateData).some(key =>
-            key !== 'status' && updateData[key] !== undefined
-          );
-
-          if (hasOtherUpdates) {
-            await eventService.logPropertyUpdated(
-              user.id,
-              parseInt(id),
-              `${property.address}, ${property.city}`,
-              metadata // ← No changedFields parameter anymore
-            );
-          }
-        } catch (error) {
-          fastify.log.error('Failed to log property updated event:', error);
-        }
-      });
 
         return property;
       } catch (err) {
@@ -542,25 +509,9 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         const property = await propertyService.changePropertyStatus(
           parseInt(id),
           status,
+          user.id,
+          getEventMetadata(request)
         );
-
-        // Log property status change
-        setImmediate(async () => {
-          try {
-            // Log general status change event
-            await eventService.logPropertyStatusChanged(
-              user.id,
-              property.id,
-              `${property.address}, ${property.city}`,
-              existingProperty.status,
-              status,
-              getEventMetadata(request)
-            );
-
-          } catch (error) {
-            fastify.log.error('Failed to log property status change events:', error);
-          }
-        });
 
         return property;
       } catch (err) {
@@ -677,22 +628,7 @@ async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
         return sendUnauthorized(reply, "User not found");
       }
 
-      const stats = await propertyService.getUserPropertyStats(user.id);
-
-      // Log property stats viewed
-      setImmediate(async () => {
-        try {
-          await eventService.logPropertyStatsViewed(
-            user.id,
-            stats.totalProperties,
-            stats.activeProperties,
-            stats.totalIncidents,
-            getEventMetadata(request)
-          );
-        } catch (error) {
-          fastify.log.error('Failed to log property stats viewed:', error);
-        }
-      });
+      const stats = await propertyService.getUserPropertyStats(user.id, user.id, getEventMetadata(request));
 
       return stats;
     },

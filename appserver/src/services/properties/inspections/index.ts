@@ -1,8 +1,6 @@
 import {
-  PrismaClient,
   Inspection,
   PropertyImage,
-  Prisma,
 } from "@prisma/client";
 import { PaginatedResponse } from "../../../repositories/incidentRepository";
 import {
@@ -14,6 +12,7 @@ import {
   UploadInspectionImageParams,
 } from "../../../repositories/inspectionRepository";
 import { NotFoundError } from "../../../utils/errors";
+import { EventMetadata } from "../../../repositories/dynamoDB/eventsRepository";
 
 // Define inspection create/update input types with specific types
 export interface CreateInspectionInput {
@@ -27,6 +26,9 @@ export interface UpdateInspectionInput {
   title?: string;
   description?: string | null;
   inspectionDate?: Date;
+  status?: string;
+  completed?: boolean;
+
 }
 
 export interface UploadImageInput {
@@ -35,6 +37,7 @@ export interface UploadImageInput {
   caption?: string | null;
   takenAt: Date;
   spaceId?: number | null;
+  spaceType?: string | null;
   metadata?: any | null;
 }
 
@@ -49,9 +52,9 @@ export interface ClassifyImagesInput {
 export class InspectionService {
   private inspectionRepo: InspectionRepository;
 
-  constructor(prisma: PrismaClient) {
-    this.inspectionRepo = new InspectionRepository(prisma);
-  }
+  constructor(inspectionRepository: InspectionRepository) {
+  this.inspectionRepo = inspectionRepository;
+}
 
   /**
    * Get inspections with pagination and filtering
@@ -65,8 +68,12 @@ export class InspectionService {
   /**
    * Get an inspection by ID
    */
-  async getInspectionById(id: number): Promise<InspectionWithFullDetails> {
-    const inspection = await this.inspectionRepo.getInspectionById(id);
+  async getInspectionById(
+    id: number,
+    userId?: number,
+    metadata?: EventMetadata
+  ): Promise<InspectionWithFullDetails> {
+    const inspection = await this.inspectionRepo.getInspectionById(id, userId, metadata);
 
     if (!inspection) {
       throw new NotFoundError(`Inspection with ID ${id} not found`);
@@ -78,7 +85,12 @@ export class InspectionService {
   /**
    * Create a new inspection
    */
-  async createInspection(data: CreateInspectionInput): Promise<Inspection> {
+  async createInspection(
+    data: CreateInspectionInput,
+    userId?: number,
+    requestUserId?: number,
+    metadata?: EventMetadata
+  ): Promise<Inspection> {
     // Business logic validations can go here
     const finalData: CreateInspectionParams = {
       propertyId: data.propertyId,
@@ -87,7 +99,7 @@ export class InspectionService {
       inspectionDate: data.inspectionDate,
     };
 
-    return this.inspectionRepo.createInspection(finalData);
+    return this.inspectionRepo.createInspection(finalData, userId, requestUserId, metadata);
   }
 
   /**
@@ -96,6 +108,8 @@ export class InspectionService {
   async updateInspection(
     id: number,
     data: UpdateInspectionInput,
+    userId?: number,
+    metadata?: EventMetadata
   ): Promise<Inspection> {
     // First check if inspection exists
     const inspection = await this.inspectionRepo.getInspectionById(id);
@@ -104,13 +118,17 @@ export class InspectionService {
       throw new NotFoundError(`Inspection with ID ${id} not found`);
     }
 
-    return this.inspectionRepo.updateInspection(id, data);
+    return this.inspectionRepo.updateInspection(id, data, userId, metadata);
   }
 
   /**
    * Delete an inspection
    */
-  async deleteInspection(id: number): Promise<Inspection> {
+  async deleteInspection(
+    id: number,
+    userId?: number,
+    metadata?: EventMetadata
+  ): Promise<Inspection> {
     // First check if inspection exists
     const inspection = await this.inspectionRepo.getInspectionById(id);
 
@@ -118,13 +136,17 @@ export class InspectionService {
       throw new NotFoundError(`Inspection with ID ${id} not found`);
     }
 
-    return this.inspectionRepo.deleteInspection(id);
+    return this.inspectionRepo.deleteInspection(id, userId, metadata);
   }
 
   /**
    * Upload an image to an inspection
    */
-  async uploadInspectionImage(data: UploadImageInput): Promise<PropertyImage> {
+  async uploadInspectionImage(
+    data: UploadImageInput,
+    userId?: number,
+    metadata?: EventMetadata
+  ): Promise<PropertyImage> {
     // First check if inspection exists
     const inspection = await this.inspectionRepo.getInspectionById(
       data.inspectionId,
@@ -145,7 +167,7 @@ export class InspectionService {
       metadata: data.metadata,
     };
 
-    return this.inspectionRepo.uploadInspectionImage(imageData);
+    return this.inspectionRepo.uploadInspectionImage(imageData, userId, metadata);
   }
 
   /**
