@@ -33,9 +33,30 @@ enum SpaceType {
   LivingRoom
   Bedroom
   Bathroom
+  DiningRoom
+  Office
+  Garage
+  Basement
   Hallway
   Exterior
-  Garage
+  Attic
+  Laundry
+  Closet
+  Pantry
+  Mudroom
+  Foyer
+  Library
+  GameRoom
+  HomeTheater
+  Gym
+  Studio
+  GuestRoom
+  MasterBedroom
+  Balcony
+  Patio
+  Deck
+  Yard
+  Driveway
   Other
   Unknown
 }

@@ -86,14 +86,33 @@ export class PropertySpaceService {
    */
   async updateSpace(
     id: number,
-    data: Prisma.PropertySpaceUpdateInput,
+    data: Prisma.PropertySpaceUpdateInput & {
+      objectLabels?: Array<{
+        name: string;
+        confidence: number;
+        category?: string;
+      }>;
+    },
   ): Promise<PropertySpace> {
     // Check if space exists
     await this.repository.getSpaceById(id).catch(() => {
       throw new NotFoundError("Property space not found");
     });
 
-    return this.repository.updateSpace(id, data);
+    // Extract objectLabels from data
+    const { objectLabels, ...spaceUpdateData } = data;
+
+    // Update the space
+    const updatedSpace = await this.repository.updateSpace(id, spaceUpdateData);
+
+    // If objectLabels are provided, update them
+    if (objectLabels && Array.isArray(objectLabels)) {
+      // Clear existing labels and add new ones
+      await this.repository.updateSpaceObjectLabels(id, objectLabels);
+    }
+
+    // Return the fully updated space with labels
+    return await this.repository.getSpaceById(id);
   }
 
   /**

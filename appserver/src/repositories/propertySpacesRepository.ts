@@ -591,4 +591,36 @@ export class PropertySpaceRepository {
       skipDuplicates: true, // Skip if the same object is already labeled
     });
   }
+
+  /**
+   * Update object labels for a space (replaces existing labels)
+   */
+  async updateSpaceObjectLabels(
+    spaceId: number,
+    objectLabels: Array<{
+      name: string;
+      confidence: number;
+      category?: string;
+    }>,
+  ): Promise<void> {
+    // Use a transaction to ensure atomicity
+    await this.prisma.$transaction(async (tx) => {
+      // First, delete all existing labels for this space
+      await tx.spaceObjectLabel.deleteMany({
+        where: { spaceId },
+      });
+
+      // Then, add the new labels if any
+      if (objectLabels && objectLabels.length > 0) {
+        await tx.spaceObjectLabel.createMany({
+          data: objectLabels.map((label) => ({
+            spaceId,
+            name: label.name,
+            confidence: new Prisma.Decimal(label.confidence.toFixed(4)),
+            category: label.category,
+          })),
+        });
+      }
+    });
+  }
 }
