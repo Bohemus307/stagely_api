@@ -20,9 +20,15 @@ export class LabelProcessor {
     "Kitchen Appliance": SpaceType.Kitchen,
     Stove: SpaceType.Kitchen,
     "Kitchen Island": SpaceType.Kitchen,
-    Pantry: SpaceType.Kitchen,
-    "Dining Table": SpaceType.Kitchen,
-    "Dining Room": SpaceType.Kitchen,
+    Pantry: SpaceType.Pantry,
+    "Food Storage": SpaceType.Pantry,
+
+    // Dining Room indicators
+    "Dining Table": SpaceType.DiningRoom,
+    "Dining Room": SpaceType.DiningRoom,
+    "Dining Chair": SpaceType.DiningRoom,
+    "China Cabinet": SpaceType.DiningRoom,
+    Buffet: SpaceType.DiningRoom,
 
     // Living Room indicators
     "Living Room": SpaceType.LivingRoom,
@@ -36,18 +42,24 @@ export class LabelProcessor {
     Lounge: SpaceType.LivingRoom,
     "TV Room": SpaceType.LivingRoom,
     "Family Room": SpaceType.LivingRoom,
-    Bookshelf: SpaceType.LivingRoom,
     "Sitting Area": SpaceType.LivingRoom,
 
     // Bedroom indicators
     Bedroom: SpaceType.Bedroom,
     Bed: SpaceType.Bedroom,
     Dresser: SpaceType.Bedroom,
-    Wardrobe: SpaceType.Bedroom,
     Nightstand: SpaceType.Bedroom,
     "Bedside Table": SpaceType.Bedroom,
-    "Master Bedroom": SpaceType.Bedroom,
-    "Guest Room": SpaceType.Bedroom,
+
+    // Master Bedroom
+    "Master Bedroom": SpaceType.MasterBedroom,
+    "Master Suite": SpaceType.MasterBedroom,
+    "King Bed": SpaceType.MasterBedroom,
+    "Queen Bed": SpaceType.Bedroom,
+
+    // Guest Room
+    "Guest Room": SpaceType.GuestRoom,
+    "Guest Bedroom": SpaceType.GuestRoom,
 
     // Bathroom indicators
     Bathroom: SpaceType.Bathroom,
@@ -63,27 +75,130 @@ export class LabelProcessor {
     // Hallway indicators
     Hallway: SpaceType.Hallway,
     Corridor: SpaceType.Hallway,
+    "Entrance Hall": SpaceType.Hallway,
+    Entryway: SpaceType.Hallway,
+
+    // Foyer
+    Foyer: SpaceType.Foyer,
+    Lobby: SpaceType.Foyer,
+    "Front Entry": SpaceType.Foyer,
+    "Grand Entrance": SpaceType.Foyer,
+
+    // Office indicators
+    Office: SpaceType.Office,
+    "Home Office": SpaceType.Office,
+    Desk: SpaceType.Office,
+    "Office Chair": SpaceType.Office,
+    Computer: SpaceType.Office,
+    "Office Desk": SpaceType.Office,
+    Workstation: SpaceType.Office,
+    Study: SpaceType.Office,
+
+    // Library
+    Library: SpaceType.Library,
+    Bookshelf: SpaceType.Library,
+    "Book Collection": SpaceType.Library,
+    "Reading Room": SpaceType.Library,
+
+    // Basement
+    Basement: SpaceType.Basement,
+    Cellar: SpaceType.Basement,
+    "Lower Level": SpaceType.Basement,
+
+    // Attic
+    Attic: SpaceType.Attic,
+    Loft: SpaceType.Attic,
+    "Upper Level Storage": SpaceType.Attic,
+
+    // Laundry
+    "Laundry Room": SpaceType.Laundry,
+    "Washing Machine": SpaceType.Laundry,
+    Dryer: SpaceType.Laundry,
+    "Laundry Basket": SpaceType.Laundry,
+    "Utility Room": SpaceType.Laundry,
+
+    // Closet
+    Closet: SpaceType.Closet,
+    Wardrobe: SpaceType.Closet,
+    "Walk-in Closet": SpaceType.Closet,
+    "Storage Closet": SpaceType.Closet,
+
+    // Mudroom
+    Mudroom: SpaceType.Mudroom,
+    "Entry Storage": SpaceType.Mudroom,
+    "Boot Room": SpaceType.Mudroom,
+
+    // Game Room
+    "Game Room": SpaceType.GameRoom,
+    "Pool Table": SpaceType.GameRoom,
+    Billiards: SpaceType.GameRoom,
+    "Recreation Room": SpaceType.GameRoom,
+    "Rec Room": SpaceType.GameRoom,
+
+    // Home Theater
+    "Home Theater": SpaceType.HomeTheater,
+    "Theater Room": SpaceType.HomeTheater,
+    "Media Room": SpaceType.HomeTheater,
+    "Projection Screen": SpaceType.HomeTheater,
+
+    // Gym
+    Gym: SpaceType.Gym,
+    "Home Gym": SpaceType.Gym,
+    "Exercise Equipment": SpaceType.Gym,
+    "Workout Room": SpaceType.Gym,
+    "Fitness Room": SpaceType.Gym,
+    Treadmill: SpaceType.Gym,
+    "Weight Bench": SpaceType.Gym,
+
+    // Studio
+    Studio: SpaceType.Studio,
+    "Art Studio": SpaceType.Studio,
+    "Music Studio": SpaceType.Studio,
+    "Recording Studio": SpaceType.Studio,
+    "Creative Space": SpaceType.Studio,
+
+    // Stairs indicators
     Stairs: SpaceType.Hallway,
     Staircase: SpaceType.Hallway,
-    "Entrance Hall": SpaceType.Hallway,
-    Foyer: SpaceType.Hallway,
-    Entryway: SpaceType.Hallway,
-    Lobby: SpaceType.Hallway,
 
     // Exterior indicators
-    Yard: SpaceType.Exterior,
-    Garden: SpaceType.Exterior,
-    Patio: SpaceType.Exterior,
     Building: SpaceType.Exterior,
-    Porch: SpaceType.Exterior,
-    Terrace: SpaceType.Exterior,
-    Balcony: SpaceType.Exterior,
-    Deck: SpaceType.Exterior,
-    Lawn: SpaceType.Exterior,
-    "Swimming Pool": SpaceType.Exterior,
     "Outdoor Area": SpaceType.Exterior,
-    Driveway: SpaceType.Exterior,
-    Walkway: SpaceType.Exterior,
+
+    // Yard
+    Yard: SpaceType.Yard,
+    Garden: SpaceType.Yard,
+    Lawn: SpaceType.Yard,
+    "Back Yard": SpaceType.Yard,
+    "Front Yard": SpaceType.Yard,
+
+    // Patio
+    Patio: SpaceType.Patio,
+    Terrace: SpaceType.Patio,
+    "Outdoor Seating": SpaceType.Patio,
+
+    // Balcony
+    Balcony: SpaceType.Balcony,
+    "Outdoor Balcony": SpaceType.Balcony,
+
+    // Deck
+    Deck: SpaceType.Deck,
+    "Wood Deck": SpaceType.Deck,
+    "Outdoor Deck": SpaceType.Deck,
+
+    // Porch
+    Porch: SpaceType.Deck,
+    "Front Porch": SpaceType.Deck,
+    "Back Porch": SpaceType.Deck,
+
+    // Pool
+    "Swimming Pool": SpaceType.Yard,
+    Pool: SpaceType.Yard,
+
+    // Driveway
+    Driveway: SpaceType.Driveway,
+    "Parking Area": SpaceType.Driveway,
+    Walkway: SpaceType.Driveway,
 
     // Garage indicators
     Garage: SpaceType.Garage,
@@ -136,6 +251,22 @@ export class LabelProcessor {
       ],
       weight: 0.8,
     },
+    [SpaceType.DiningRoom]: {
+      keywords: ["dining", "meal", "feast", "dinner", "lunch"],
+      weight: 0.7,
+    },
+    [SpaceType.Office]: {
+      keywords: ["work", "computer", "desk", "business", "study"],
+      weight: 0.7,
+    },
+    [SpaceType.Garage]: {
+      keywords: ["vehicle", "storage", "equipment", "tool", "mechanical"],
+      weight: 0.7,
+    },
+    [SpaceType.Basement]: {
+      keywords: ["underground", "lower", "storage", "basement"],
+      weight: 0.6,
+    },
     [SpaceType.Hallway]: {
       keywords: ["passage", "connecting", "transition", "narrow", "walkway"],
       weight: 0.6,
@@ -153,9 +284,77 @@ export class LabelProcessor {
       ],
       weight: 0.7,
     },
-    [SpaceType.Garage]: {
-      keywords: ["vehicle", "storage", "equipment", "tool", "mechanical"],
+    [SpaceType.Attic]: {
+      keywords: ["upper", "top", "roof", "storage", "insulation"],
+      weight: 0.6,
+    },
+    [SpaceType.Laundry]: {
+      keywords: ["wash", "clean", "utility", "detergent", "clothes"],
       weight: 0.7,
+    },
+    [SpaceType.Closet]: {
+      keywords: ["storage", "clothes", "organize", "wardrobe"],
+      weight: 0.6,
+    },
+    [SpaceType.Pantry]: {
+      keywords: ["food", "storage", "shelf", "supply", "provision"],
+      weight: 0.6,
+    },
+    [SpaceType.Mudroom]: {
+      keywords: ["entry", "boots", "coat", "storage", "transition"],
+      weight: 0.6,
+    },
+    [SpaceType.Foyer]: {
+      keywords: ["entrance", "grand", "welcome", "entry", "formal"],
+      weight: 0.6,
+    },
+    [SpaceType.Library]: {
+      keywords: ["book", "read", "study", "literature", "shelf"],
+      weight: 0.7,
+    },
+    [SpaceType.GameRoom]: {
+      keywords: ["game", "play", "recreation", "fun", "entertainment"],
+      weight: 0.7,
+    },
+    [SpaceType.HomeTheater]: {
+      keywords: ["movie", "cinema", "screen", "theater", "media"],
+      weight: 0.7,
+    },
+    [SpaceType.Gym]: {
+      keywords: ["exercise", "fitness", "workout", "training", "equipment"],
+      weight: 0.7,
+    },
+    [SpaceType.Studio]: {
+      keywords: ["art", "music", "creative", "design", "craft"],
+      weight: 0.6,
+    },
+    [SpaceType.GuestRoom]: {
+      keywords: ["guest", "visitor", "spare", "accommodation"],
+      weight: 0.6,
+    },
+    [SpaceType.MasterBedroom]: {
+      keywords: ["master", "suite", "primary", "ensuite", "luxury"],
+      weight: 0.7,
+    },
+    [SpaceType.Balcony]: {
+      keywords: ["balcony", "outdoor", "view", "railing", "terrace"],
+      weight: 0.6,
+    },
+    [SpaceType.Patio]: {
+      keywords: ["outdoor", "seating", "entertainment", "barbecue", "dining"],
+      weight: 0.6,
+    },
+    [SpaceType.Deck]: {
+      keywords: ["wooden", "outdoor", "platform", "railing", "boards"],
+      weight: 0.6,
+    },
+    [SpaceType.Yard]: {
+      keywords: ["grass", "lawn", "garden", "outdoor", "landscaping"],
+      weight: 0.7,
+    },
+    [SpaceType.Driveway]: {
+      keywords: ["parking", "concrete", "asphalt", "entrance", "vehicle"],
+      weight: 0.6,
     },
   };
 
@@ -164,17 +363,15 @@ export class LabelProcessor {
    */
   processLabels(labels: Label[]): ClassificationResult {
     // Track space type scores with improved weighting
-    const spaceScores: Record<SpaceType, number> = {
-      [SpaceType.Kitchen]: 0,
-      [SpaceType.LivingRoom]: 0,
-      [SpaceType.Bedroom]: 0,
-      [SpaceType.Bathroom]: 0,
-      [SpaceType.Hallway]: 0,
-      [SpaceType.Exterior]: 0,
-      [SpaceType.Garage]: 0,
-      [SpaceType.Other]: 0,
-      [SpaceType.Unknown]: 0,
-    };
+    const spaceScores: Record<SpaceType, number> = {} as Record<
+      SpaceType,
+      number
+    >;
+
+    // Initialize all space types with 0 score
+    Object.values(SpaceType).forEach((type) => {
+      spaceScores[type] = 0;
+    });
 
     // Extract all label names and descriptions for better matching
     const labelNames: string[] = [];

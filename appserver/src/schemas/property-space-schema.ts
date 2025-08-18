@@ -56,6 +56,18 @@ const updateSpaceSchema = {
     aiGenerated: { type: "boolean" },
     featureVector: { type: ["object", "null"] },
     confidenceScore: { type: ["string", "null"] },
+    objectLabels: {
+      type: ["array", "null"],
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          confidence: { type: "number" },
+          category: { type: ["string", "null"] },
+        },
+        required: ["name", "confidence"],
+      },
+    },
   },
   minProperties: 1,
 };
