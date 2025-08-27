@@ -194,6 +194,18 @@ export class PropertySpaceRepository {
   }
 
   /**
+   * Get the most recent image for a property space
+   */
+  async getMostRecentSpaceImage(
+    spaceId: number,
+  ): Promise<PropertyImage | null> {
+    return this.prisma.propertyImage.findFirst({
+      where: { spaceId },
+      orderBy: { takenAt: "desc" },
+    });
+  }
+
+  /**
    * Get all spaces for a property
    */
   async getSpacesByPropertyId(
