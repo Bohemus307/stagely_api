@@ -15,11 +15,8 @@ import {
   IncidentWithFullRelations,
   IncidentStats,
 } from "../../repositories/incidentRepository";
-import { ConflictError, NotFoundError } from "../../utils/errors";
+import { NotFoundError } from "../../utils/errors";
 import { S3Client } from "@aws-sdk/client-s3";
-import { SpaceClassificationResult } from "../../repositories/propertySpacesRepository";
-
-import { IncidentClassificationService } from "./comparison";
 import { S3Config } from "./comparison/comparisonTypes";
 import { ClaudeClassificationService } from "../properties/spaces/classification/claudeClassifier";
 
@@ -31,6 +28,7 @@ export interface CreateIncidentInput {
   reportedAt?: Date | string;
   severity: IncidentSeverity;
   status?: IncidentStatus;
+  featureVector: Prisma.InputJsonObject;
   images?: {
     imageUrl: string;
     caption?: string;

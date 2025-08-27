@@ -52,6 +52,15 @@ export class PropertySpaceService {
   }
 
   /**
+   * Get the most recent image for a property space
+   */
+  async getMostRecentSpaceImage(
+    spaceId: number,
+  ): Promise<PropertyImage | null> {
+    return this.repository.getMostRecentSpaceImage(spaceId);
+  }
+
+  /**
    * Get spaces by property ID
    */
   async getSpacesByPropertyId(

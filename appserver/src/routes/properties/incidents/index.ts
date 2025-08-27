@@ -1,9 +1,17 @@
 import { FastifyInstance } from "fastify";
-import { IncidentStatus, IncidentSeverity, SpaceType } from "@prisma/client";
+import {
+  IncidentStatus,
+  IncidentSeverity,
+  SpaceType,
+  Prisma,
+} from "@prisma/client";
 import { NotFoundError } from "../../../utils/errors";
 
 import { sendNotFound, sendUnauthorized } from "../../../utils/responses";
 import { IncidentService } from "../../../services/incidents";
+import { PropertySpaceService } from "../../../services/properties/spaces";
+import { compareRoomImages } from "../../../services/imageComparisonService";
+import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -15,14 +23,27 @@ interface StatusUpdateBody {
   resolvedAt?: string | null;
 }
 
+// Add Bedrock client initialization
+const bedrockClient = new BedrockRuntimeClient({
+  region:
+    process.env.AWS_BEDROCK_REGION || process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId: process.env.ACCESS_KEY!,
+    secretAccessKey: process.env.SECRET_ACCESS_KEY!,
+  },
+});
+
 /**
  * Incident routes
  *
  * @param fastify - The Fastify instance
  */
 async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
-  // Get service instance with Prisma
   const incidentService = new IncidentService(fastify.prisma, fastify.s3);
+  const propertySpaceService = new PropertySpaceService(
+    fastify.prisma,
+    fastify.s3,
+  );
 
   // GET /incidents
   fastify.route({
@@ -990,6 +1011,10 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             enum: Object.values(SpaceType),
             nullable: true,
           },
+          spaceId: {
+            type: "number",
+            nullable: true,
+          },
           status: {
             type: "string",
             enum: Object.values(IncidentStatus),
@@ -1065,7 +1090,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           return sendUnauthorized(reply, "User not found or not authorized");
         }
 
-        // TODO: switch to SERVICE!!!!!!!!!
+        // TODO: switch to SERVICE No prisma directly!!!!!!!!!
         const property = await fastify.prisma.property.findUnique({
           where: { id: incidentData.propertyId },
           select: { userId: true, id: true },
@@ -1078,8 +1103,26 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           );
         }
 
-        let incident;
+        // check current space type of incident and get recent image of that space type
+        let referenceImageUrl = null;
+        if (incidentData.spaceId) {
+          const recentSpaceImage =
+            await propertySpaceService.getMostRecentSpaceImage(
+              incidentData.spaceId,
+            );
+          referenceImageUrl = recentSpaceImage?.imageUrl;
+        }
 
+        const comparisonResult = await compareRoomImages(
+          bedrockClient,
+          fastify.s3.client,
+          fastify.s3.bucket,
+          fastify.s3.region,
+          referenceImageUrl as string,
+          incidentData.images[0].imageUrl,
+        );
+
+        let incident;
         incident = await incidentService.createIncident({
           propertyId: property.id,
           incidentType: incidentData.incidentType,
@@ -1088,6 +1131,20 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           severity: incidentData.severity,
           status: incidentData.status || IncidentStatus.Open,
           images: incidentData.images,
+          featureVector: JSON.parse(
+            JSON.stringify({
+              imageComparison: {
+                referenceImageUrl,
+                comparisonImageUrl: incidentData.images[0].imageUrl,
+                addedItems: comparisonResult.addedItems,
+                removedItems: comparisonResult.removedItems,
+                movedItems: comparisonResult.movedItems,
+                summary: comparisonResult.summary,
+                claudeAnalysis: comparisonResult.claudeAnalysis,
+                comparedAt: new Date().toISOString(),
+              },
+            }),
+          ),
         });
 
         reply.code(201);
