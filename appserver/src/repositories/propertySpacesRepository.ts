@@ -6,8 +6,8 @@ import {
   Prisma,
   SpaceObjectLabel,
 } from "@prisma/client";
-import { SpaceClassificationService } from "../services/properties/spaces/classification";
 import { S3Client } from "@aws-sdk/client-s3";
+import { ClaudeClassificationService } from "../services/properties/spaces/classification/claudeClassifier";
 
 // Define types for query parameters
 export interface PropertySpaceQueryParams {
@@ -277,36 +277,6 @@ export class PropertySpaceRepository {
   }
 
   /**
-   * Check if a property exists
-   */
-  async propertyExists(propertyId: number): Promise<boolean> {
-    const count = await this.prisma.property.count({
-      where: { id: propertyId },
-    });
-    return count > 0;
-  }
-
-  /**
-   * Validate that all provided image IDs exist
-   */
-  async validatePropertyImages(imageIds: number[]): Promise<number[]> {
-    if (imageIds.length === 0) return [];
-
-    const images = await this.prisma.propertyImage.findMany({
-      where: {
-        id: {
-          in: imageIds,
-        },
-      },
-      select: {
-        id: true,
-      },
-    });
-
-    return images.map((img) => img.id);
-  }
-
-  /**
    * Associate images with a space
    */
   async associateImagesWithSpace(
@@ -385,7 +355,7 @@ export class PropertySpaceRepository {
       }
 
       // Create an instance of SpaceClassificationService
-      const classificationService = new SpaceClassificationService(this.s3);
+      const classificationService = new ClaudeClassificationService(this.s3);
 
       // Use the service to classify multiple images
       const result =
@@ -418,35 +388,6 @@ export class PropertySpaceRepository {
         },
       };
     }
-  }
-
-  /**
-   * Get similar spaces based on feature vectors
-   */
-  async getSimilarSpaces(
-    spaceId: number,
-    featureVector: Prisma.JsonValue,
-    limit: number = 5,
-  ): Promise<PropertySpace[]> {
-    // In a real implementation, this would use vector similarity search
-    // For demonstration, we'll just get other spaces of the same type
-
-    const currentSpace = await this.prisma.propertySpace.findUnique({
-      where: { id: spaceId },
-    });
-
-    if (!currentSpace) {
-      throw new Error(`Property space with ID ${spaceId} not found`);
-    }
-
-    return this.prisma.propertySpace.findMany({
-      where: {
-        id: { not: spaceId },
-        type: currentSpace.type,
-        //featureVector: { not: null },
-      },
-      take: limit,
-    });
   }
 
   /**

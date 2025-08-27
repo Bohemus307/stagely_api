@@ -12,8 +12,11 @@ import {
   SpaceClassificationResult,
 } from "../../../repositories/propertySpacesRepository";
 import { NotFoundError, ConflictError } from "../../../utils/errors";
-import { SpaceClassificationService } from "./classification";
 import { S3Client } from "@aws-sdk/client-s3";
+import {
+  ClaudeClassificationResult,
+  ClaudeClassificationService,
+} from "./classification/claudeClassifier";
 
 /**
  * Service for handling property space operations
@@ -55,12 +58,6 @@ export class PropertySpaceService {
     propertyId: number,
     params: Omit<PropertySpaceQueryParams, "propertyId"> = {},
   ) {
-    // Check if property exists
-    const propertyExists = await this.repository.propertyExists(propertyId);
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
-
     return this.repository.getSpacesByPropertyId(propertyId, params);
   }
 
@@ -70,14 +67,6 @@ export class PropertySpaceService {
   async createSpace(
     data: Prisma.PropertySpaceUncheckedCreateInput,
   ): Promise<PropertySpace> {
-    // Check if property exists
-    const propertyExists = await this.repository.propertyExists(
-      data.propertyId,
-    );
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
-
     return this.repository.createSpace(data);
   }
 
@@ -103,7 +92,7 @@ export class PropertySpaceService {
     const { objectLabels, ...spaceUpdateData } = data;
 
     // Update the space
-    const updatedSpace = await this.repository.updateSpace(id, spaceUpdateData);
+    await this.repository.updateSpace(id, spaceUpdateData);
 
     // If objectLabels are provided, update them
     if (objectLabels && Array.isArray(objectLabels)) {
@@ -139,16 +128,6 @@ export class PropertySpaceService {
       throw new NotFoundError("Property space not found");
     });
 
-    // Validate that all images exist
-    const validImageIds =
-      await this.repository.validatePropertyImages(imageIds);
-    if (validImageIds.length !== imageIds.length) {
-      const invalidIds = imageIds.filter((id) => !validImageIds.includes(id));
-      throw new ConflictError(
-        `Some images not found: ${invalidIds.join(", ")}`,
-      );
-    }
-
     return this.repository.associateImagesWithSpace(spaceId, imageIds);
   }
 
@@ -179,11 +158,26 @@ export class PropertySpaceService {
       );
     }
 
-    // Perform space classification using AI
-    const classification = await this.repository.classifySpaceFromImages(
-      spaceId,
-      images,
-    );
+    // Create the Claude classification service
+    const classificationService = new ClaudeClassificationService(this.s3);
+
+    // Get image URLs for classification
+    const imageUrls = images.map((img) => img.imageUrl);
+
+    // Perform classification using Claude
+    const claudeResult =
+      await classificationService.classifyMultipleImages(imageUrls);
+
+    // Convert Claude result to SpaceClassificationResult
+    const classification: SpaceClassificationResult = {
+      spaceId: spaceId,
+      spaceType: claudeResult.spaceType,
+      confidenceScore: new Prisma.Decimal(
+        claudeResult.confidenceScore.toFixed(4),
+      ),
+      featureVector: claudeResult.featureVector,
+      objectLabels: claudeResult.labels,
+    };
 
     // Update the space with the classification results
     await this.repository.updateSpace(spaceId, {
@@ -204,30 +198,17 @@ export class PropertySpaceService {
     imageIds: number[],
   ): Promise<SpaceClassificationResult[]> {
     // Validate property exists and get images (concurrent)
-    const [propertyExists, images] = await Promise.all([
-      this.repository.propertyExists(propertyId),
+    const [images] = await Promise.all([
       this.repository.getImagesByIds(imageIds),
     ]);
-
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
 
     // If no images, return empty result
     if (images.length === 0) {
       return [];
     }
 
-    // Create the classification service
-    const classificationService = new SpaceClassificationService(this.s3);
-
-    // Get all image URLs
-    const imageUrls = images.map((img) => img.imageUrl);
-
-    // Process ALL images at once using our optimized service
-    // The service internally handles controlled concurrency
-    const results =
-      await classificationService.classifyMultipleImages(imageUrls);
+    // Create the Claude classification service
+    const classificationService = new ClaudeClassificationService(this.s3);
 
     // Group images by AI-determined space type
     const imagesByType = await this.groupImagesBySpaceType(images);
@@ -239,19 +220,28 @@ export class PropertySpaceService {
         if (groupImages.length === 0) return null;
 
         try {
-          // Extract object labels from the classification results
-          const objectLabels = this.extractObjectLabels(results);
+          // Get URLs for this group of images
+          const groupImageUrls = groupImages.map((img) => img.imageUrl);
+
+          // Classify this group of images
+          const claudeResult =
+            await classificationService.classifyMultipleImages(groupImageUrls);
+
+          // Extract object labels from the Claude classification result
+          const objectLabels = this.extractObjectLabelsFromClaude(claudeResult);
 
           // Create a space for this type
-          const spaceName = `${spaceType} ${new Date().toISOString().slice(0, 10)}`;
+          const spaceName =
+            claudeResult.suggestedName ||
+            `${spaceType} ${new Date().toISOString().slice(0, 10)}`;
           const newSpace = await this.repository.createSpace({
             propertyId,
             name: spaceName,
             type: spaceType as SpaceType,
             confidenceScore: new Prisma.Decimal(
-              Number(results.confidenceScore).toFixed(4),
+              claudeResult.confidenceScore.toFixed(4),
             ),
-            featureVector: results.featureVector as Prisma.InputJsonValue,
+            featureVector: claudeResult.featureVector as Prisma.InputJsonValue,
             aiGenerated: true,
           });
 
@@ -272,20 +262,16 @@ export class PropertySpaceService {
             groupImageIds,
           );
 
-          // Create the result (with optional objectLabels field)
+          // Create the result
           const result: SpaceClassificationResult = {
             spaceId: newSpace.id,
             spaceType: spaceType as SpaceType,
             confidenceScore: new Prisma.Decimal(
-              Number(results.confidenceScore).toFixed(4),
+              claudeResult.confidenceScore.toFixed(4),
             ),
-            featureVector: results.featureVector,
+            featureVector: claudeResult.featureVector,
+            objectLabels: claudeResult.labels,
           };
-
-          // Add object labels if we have any
-          if (objectLabels.length > 0) {
-            result.objectLabels = objectLabels.map((label) => label.name);
-          }
 
           return result;
         } catch (error) {
@@ -305,7 +291,33 @@ export class PropertySpaceService {
   }
 
   /**
-   * Extract object labels from classification result
+   * Extract object labels from Claude classification result
+   */
+  private extractObjectLabelsFromClaude(
+    claudeResult: ClaudeClassificationResult,
+  ): Array<{ name: string; confidence: number; category?: string }> {
+    const objectLabels: Array<{
+      name: string;
+      confidence: number;
+      category?: string;
+    }> = [];
+
+    // Use Claude's labels directly
+    if (claudeResult.labels && Array.isArray(claudeResult.labels)) {
+      claudeResult.labels.forEach((label: string) => {
+        objectLabels.push({
+          name: label,
+          confidence: claudeResult.confidenceScore, // Use overall confidence
+          category: this.categorizeObject(label),
+        });
+      });
+    }
+
+    return objectLabels;
+  }
+
+  /**
+   * Extract object labels from classification result (legacy method for repository calls)
    */
   private extractObjectLabels(
     classificationResult: any,
@@ -470,8 +482,9 @@ export class PropertySpaceService {
     Object.values(SpaceType).forEach((type) => {
       result[type] = [];
     });
-    // Create classification service
-    const classificationService = new SpaceClassificationService(this.s3);
+
+    // Create Claude classification service
+    const classificationService = new ClaudeClassificationService(this.s3);
 
     // Classify each image individually
     for (const image of images) {
@@ -491,75 +504,13 @@ export class PropertySpaceService {
   }
 
   /**
-   * Get similar spaces based on feature vectors
-   */
-  async getSimilarSpaces(
-    spaceId: number,
-    limit: number = 5,
-  ): Promise<PropertySpace[]> {
-    // Check if space exists
-    const space = await this.repository.getSpaceById(spaceId).catch(() => {
-      throw new NotFoundError("Property space not found");
-    });
-
-    if (!space.featureVector) {
-      throw new ConflictError(
-        "Space does not have feature vector for similarity comparison",
-      );
-    }
-
-    return this.repository.getSimilarSpaces(
-      spaceId,
-      space.featureVector as Prisma.JsonValue,
-      limit,
-    );
-  }
-
-  /**
    * Get spaces by type for a property
    */
   async getSpacesByType(
     propertyId: number,
     type: SpaceType,
   ): Promise<PropertySpace[]> {
-    // Validate that the property exists
-    const propertyExists = await this.repository.propertyExists(propertyId);
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
-
     return this.repository.getSpacesByType(propertyId, type);
-  }
-
-  /**
-   * Reclassify all spaces for a property
-   */
-  async reclassifyPropertySpaces(
-    propertyId: number,
-  ): Promise<SpaceClassificationResult[]> {
-    // Validate that the property exists
-    const propertyExists = await this.repository.propertyExists(propertyId);
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
-
-    // Get all spaces for this property
-    const spaces = await this.repository.getSpacesByPropertyId(propertyId);
-
-    const results: SpaceClassificationResult[] = [];
-
-    // Classify each space
-    for (const space of spaces) {
-      try {
-        const result = await this.classifySpace(space.id);
-        results.push(result);
-      } catch (error) {
-        // Continue with other spaces even if one fails
-        console.error(`Failed to classify space ${space.id}:`, error);
-      }
-    }
-
-    return results;
   }
 
   /**
@@ -574,13 +525,6 @@ export class PropertySpaceService {
       metadata?: any | null;
     }[],
   ): Promise<PropertyImage[]> {
-    // First check if inspection exists
-    const space = await this.repository.getSpaceById(spaceId);
-
-    if (!space) {
-      throw new NotFoundError(`Space with ID ${spaceId} not found`);
-    }
-
     // Process each image one by one
     const uploadedImages: PropertyImage[] = [];
 
@@ -611,12 +555,6 @@ export class PropertySpaceService {
     imageUrl: string,
     metadata?: any,
   ): Promise<PropertySpaceWithFullRelations> {
-    // Check if property exists
-    const propertyExists = await this.repository.propertyExists(propertyId);
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
-
     // Create a temporary space to associate with the image
     const tempSpace = await this.repository.createSpace({
       propertyId,

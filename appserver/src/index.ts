@@ -160,10 +160,13 @@ server.register(require("@fastify/swagger"), {
     tags: [
       { name: "properties", description: "Property management endpoints" },
       { name: "incidents", description: "Incident management endpoints" },
-      { name: "inspections", description: "Inspection management endpoints" },
       {
         name: "property-spaces",
         description: "Property Spaces management endpoints",
+      },
+      {
+        name: "compare-images",
+        description: "Compare property images using LLM inference",
       },
       { name: "system", description: "System health and diagnostics" },
       { name: "s3", description: "Image Url management" },
@@ -215,7 +218,9 @@ server.register(autoLoad, {
   dir: path.join(__dirname, "routes"),
   dirNameRoutePrefix: true,
 });
+
 server.register(inviteRoutes, { prefix: "/users" });
+
 const start = async () => {
   try {
     // Add hooks for performance monitoring
