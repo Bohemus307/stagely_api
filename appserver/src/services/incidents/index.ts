@@ -18,9 +18,10 @@ import {
 import { ConflictError, NotFoundError } from "../../utils/errors";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SpaceClassificationResult } from "../../repositories/propertySpacesRepository";
-import { SpaceClassificationService } from "../properties/spaces/classification";
+
 import { IncidentClassificationService } from "./comparison";
 import { S3Config } from "./comparison/comparisonTypes";
+import { ClaudeClassificationService } from "../properties/spaces/classification/claudeClassifier";
 
 // Define incident create/update input types with specific types
 export interface CreateIncidentInput {
@@ -58,8 +59,8 @@ export interface UpdateIncidentInput {
 export class IncidentService {
   private incidentRepo: IncidentRepository;
   private s3: { client: S3Client; bucket: string; region: string };
-  private spaceClassificationService: SpaceClassificationService;
-  private incidentClassificationService: IncidentClassificationService;
+  private spaceClassificationService: ClaudeClassificationService;
+  private incidentClassificationService: ClaudeClassificationService;
 
   constructor(
     prisma: PrismaClient,
@@ -67,7 +68,7 @@ export class IncidentService {
   ) {
     this.incidentRepo = new IncidentRepository(prisma, s3);
     this.s3 = s3;
-    this.spaceClassificationService = new SpaceClassificationService(s3);
+    this.spaceClassificationService = new ClaudeClassificationService(s3);
 
     // Initialize the new incident classification service
     const s3Config: S3Config = {
@@ -75,7 +76,7 @@ export class IncidentService {
       bucket: s3.bucket,
       region: s3.region,
     };
-    this.incidentClassificationService = new IncidentClassificationService(
+    this.incidentClassificationService = new ClaudeClassificationService(
       s3Config,
     );
   }
@@ -140,26 +141,23 @@ export class IncidentService {
             takenAt: img.takenAt || new Date(),
           })) as PropertyImage[];
 
+          const imageUrls = propertyImages.map((image) => image.imageUrl);
           // Detect incidents using the classification service
           const detectionResult =
-            await this.incidentClassificationService.processMultipleImages(
-              propertyImages,
-              incident.propertyId,
-              // Don't pass userId here as we don't have it
+            await this.incidentClassificationService.classifyMultipleImages(
+              imageUrls,
             );
 
           // Update incident with classification results // more to come now
           await this.incidentRepo.updateIncident(incident.id, {
-            incidentType: detectionResult.incidentType || incident.incidentType,
-            severity: detectionResult.severity || incident.severity,
+            incidentType: incidentData.incidentType || incident.incidentType,
+            severity: incidentData.severity || incident.severity,
             spaceType: (detectionResult.spaceType as SpaceType) || undefined,
             featureVector: detectionResult.featureVector || Prisma.JsonNull,
             aiClassified: true,
-            labeledImageUrl: detectionResult.labeledImageUrl,
           });
         } catch (error) {
           console.error("Error classifying incident:", error);
-          // Continue even if classification fails
         }
       }
     }
@@ -230,18 +228,17 @@ export class IncidentService {
               imageUrl: img.imageUrl,
               takenAt: img.takenAt,
             })) as PropertyImage[];
-
+            const imageURls = propertyImages.map((image) => image.imageUrl);
             // Reclassify based on all images (including new ones)
             const detectionResult =
-              await this.incidentClassificationService.processMultipleImages(
-                propertyImages,
+              await this.incidentClassificationService.classifyMultipleImages(
+                imageURls,
               );
 
             // Update incident with classification results
             await this.incidentRepo.updateIncident(id, {
-              incidentType:
-                detectionResult.incidentType || incident.incidentType,
-              severity: detectionResult.severity || incident.severity,
+              incidentType: incidentData.incidentType || incident.incidentType,
+              severity: incidentData.severity || incident.severity,
               spaceType: (detectionResult.spaceType as SpaceType) || undefined,
               featureVector: detectionResult.featureVector || Prisma.JsonNull,
               aiClassified: true,
@@ -351,16 +348,17 @@ export class IncidentService {
           takenAt: img.takenAt,
         })) as PropertyImage[];
 
+        const imageURls = propertyImages.map((image) => image.imageUrl);
         // Reclassify based on all images (including new ones)
         const detectionResult =
-          await this.incidentClassificationService.processMultipleImages(
-            propertyImages,
+          await this.incidentClassificationService.classifyMultipleImages(
+            imageURls,
           );
 
         // Update incident with classification results
         await this.incidentRepo.updateIncident(id, {
-          incidentType: detectionResult.incidentType || incident.incidentType,
-          severity: detectionResult.severity || incident.severity,
+          incidentType: incident.incidentType || incident.incidentType,
+          severity: incident.severity || incident.severity,
           spaceType: (detectionResult.spaceType as SpaceType) || undefined,
           featureVector: detectionResult.featureVector || Prisma.JsonNull,
           aiClassified: true,
@@ -387,7 +385,7 @@ export class IncidentService {
     });
 
     // Create classification service
-    const classificationService = new SpaceClassificationService(this.s3);
+    const classificationService = new ClaudeClassificationService(this.s3);
 
     // Classify each image individually
     for (const image of images) {
@@ -609,17 +607,17 @@ export class IncidentService {
           takenAt: img.takenAt,
         })) as PropertyImage[];
 
-        // Detect incidents using the classification service
+        const imageURls = propertyImages.map((image) => image.imageUrl);
+        // Reclassify based on all images (including new ones)
         const detectionResult =
-          await this.incidentClassificationService.processMultipleImages(
-            propertyImages,
-            incident.propertyId,
+          await this.incidentClassificationService.classifyMultipleImages(
+            imageURls,
           );
 
         // Update incident with classification results
         await this.incidentRepo.updateIncident(incidentId, {
-          incidentType: detectionResult.incidentType || incident.incidentType,
-          severity: detectionResult.severity || incident.severity,
+          incidentType: incident.incidentType || incident.incidentType,
+          severity: incident.severity || incident.severity,
           spaceType: (detectionResult.spaceType as SpaceType) || undefined,
           featureVector: detectionResult.featureVector || Prisma.JsonNull,
           aiClassified: true,
@@ -636,130 +634,131 @@ export class IncidentService {
     return uploadedImages;
   }
 
-  /**
-   * Automatically create spaces and classify images using AI
-   * Also saves object labels detected in the images
-   */
-  async autoCreateAndClassifyIncident(
-    propertyId: number,
-    imageIds: number[],
-  ): Promise<SpaceClassificationResult[]> {
-    // Validate property exists and get images (concurrent)
-    const [propertyExists, images] = await Promise.all([
-      this.incidentRepo.propertyExists(propertyId),
-      this.incidentRepo.getImagesByIds(imageIds),
-    ]);
+  // /**
+  //  * Automatically create spaces and classify images using AI
+  //  * Also saves object labels detected in the images
+  //  */
+  // async autoCreateAndClassifyIncident(
+  //   propertyId: number,
+  //   imageIds: number[],
+  // ): Promise<SpaceClassificationResult[]> {
+  //   // Validate property exists and get images (concurrent)
+  //   const [propertyExists, images] = await Promise.all([
+  //     this.incidentRepo.propertyExists(propertyId),
+  //     this.incidentRepo.getImagesByIds(imageIds),
+  //   ]);
 
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
+  //   if (!propertyExists) {
+  //     throw new NotFoundError("Property not found");
+  //   }
 
-    // If no images, return empty result
-    if (images.length === 0) {
-      return [];
-    }
+  //   // If no images, return empty result
+  //   if (images.length === 0) {
+  //     return [];
+  //   }
 
-    // Create the classification service
-    const classificationService = new SpaceClassificationService(this.s3);
+  //   // Create the classification service
+  //   const classificationService = new ClaudeClassificationService(this.s3);
 
-    // Get all image URLs
-    const imageUrls = images.map((img: { imageUrl: any }) => img.imageUrl);
+  //   // Get all image URLs
+  //   const imageUrls = images.map((img: { imageUrl: any }) => img.imageUrl);
 
-    // Process ALL images at once using our optimized service
-    // The service internally handles controlled concurrency
-    const results =
-      await classificationService.classifyMultipleImages(imageUrls);
+  //   // Process ALL images at once using our optimized service
+  //   // The service internally handles controlled concurrency
+  //   const results =
+  //     await classificationService.classifyMultipleImages(imageUrls);
 
-    // Group images by AI-determined space type
-    const imagesByType = await this.groupImagesBySpaceType(images);
+  //   // Group images by AI-determined space type
+  //   const imagesByType = await this.groupImagesBySpaceType(images);
 
-    // Create spaces for each type concurrently
-    const createSpacePromises = Object.entries(imagesByType).map(
-      async ([spaceType, groupImages]) => {
-        // Skip if no images for this type
-        if (groupImages.length === 0) return null;
+  //   // Create spaces for each type concurrently
+  //   const createSpacePromises = Object.entries(imagesByType).map(
+  //     async ([spaceType, groupImages]) => {
+  //       // Skip if no images for this type
+  //       if (groupImages.length === 0) return null;
 
-        try {
-          // Extract object labels from the classification results
-          const objectLabels = this.extractObjectLabels(results);
+  //       try {
+  //         // Extract object labels from the classification results
+  //         const objectLabels = this.extractObjectLabels(results);
 
-          // Convert group images to PropertyImage[] for incident classification
-          const propertyImages = groupImages as PropertyImage[];
+  //         // Convert group images to PropertyImage[] for incident classification
+  //         const propertyImages = groupImages as PropertyImage[];
 
-          // Use the incident classification service to determine incident type and severity
-          const detectionResult =
-            await this.incidentClassificationService.processMultipleImages(
-              propertyImages,
-            );
+  //         const imageURls = propertyImages.map((image) => image.imageUrl);
+  //         // Reclassify based on all images (including new ones)
+  //         const detectionResult =
+  //           await this.incidentClassificationService.classifyMultipleImages(
+  //             imageURls,
+  //           );
 
-          // Create a incident with incident classification results
-          const incidentName = `${spaceType} ${new Date().toISOString().slice(0, 10)}`;
-          const newIncident = await this.incidentRepo.createIncident({
-            propertyId,
-            incidentType: detectionResult.incidentType || spaceType.toString(),
-            description: incidentName,
-            reportedAt: new Date(),
-            severity: detectionResult.severity || IncidentSeverity.Low,
-            status: IncidentStatus.Open,
-            spaceType: spaceType as SpaceType,
-            featureVector: detectionResult.featureVector || Prisma.JsonNull,
-            aiClassified: true,
-            resolvedAt: null,
-          });
+  //         // Create a incident with incident classification results
+  //         const incidentName = `${spaceType} ${new Date().toISOString().slice(0, 10)}`;
+  //         const newIncident = await this.incidentRepo.createIncident({
+  //           propertyId,
+  //           incidentType: ,
+  //           description: incidentName,
+  //           reportedAt: new Date(),
+  //           severity: detectionResult.severity || IncidentSeverity.Low,
+  //           status: IncidentStatus.Open,
+  //           spaceType: spaceType as SpaceType,
+  //           featureVector: detectionResult.featureVector || Prisma.JsonNull,
+  //           aiClassified: true,
+  //           resolvedAt: null,
+  //         });
 
-          // Save the object labels if we have any
-          if (objectLabels.length > 0) {
-            await this.incidentRepo.addObjectLabelsToSpace(
-              newIncident.id,
-              objectLabels,
-            );
-          }
+  //         // Save the object labels if we have any
+  //         if (objectLabels.length > 0) {
+  //           await this.incidentRepo.addObjectLabelsToSpace(
+  //             newIncident.id,
+  //             objectLabels,
+  //           );
+  //         }
 
-          // Get IDs of images in this group
-          const groupImageIds = groupImages.map((img) => img.id);
+  //         // Get IDs of images in this group
+  //         const groupImageIds = groupImages.map((img) => img.id);
 
-          // Associate images with the new space
-          await this.incidentRepo.associateImagesWithIncident(
-            newIncident.id,
-            groupImageIds,
-          );
+  //         // Associate images with the new space
+  //         await this.incidentRepo.associateImagesWithIncident(
+  //           newIncident.id,
+  //           groupImageIds,
+  //         );
 
-          // Create the result (with optional objectLabels field)
-          const result: SpaceClassificationResult = {
-            incidentId: newIncident.id,
-            spaceType: spaceType as SpaceType,
-            confidenceScore: new Prisma.Decimal(
-              Number(
-                detectionResult.confidenceScore || results.confidenceScore,
-              ).toFixed(4),
-            ),
-            featureVector:
-              detectionResult.featureVector || results.featureVector,
-          };
+  //         // Create the result (with optional objectLabels field)
+  //         const result: SpaceClassificationResult = {
+  //           incidentId: newIncident.id,
+  //           spaceType: spaceType as SpaceType,
+  //           confidenceScore: new Prisma.Decimal(
+  //             Number(
+  //               detectionResult.confidenceScore || results.confidenceScore,
+  //             ).toFixed(4),
+  //           ),
+  //           featureVector:
+  //             detectionResult.featureVector || results.featureVector,
+  //         };
 
-          // Add object labels if we have any
-          if (objectLabels.length > 0) {
-            result.objectLabels = objectLabels.map(
-              (label: { name: any }) => label.name,
-            );
-          }
+  //         // Add object labels if we have any
+  //         if (objectLabels.length > 0) {
+  //           result.objectLabels = objectLabels.map(
+  //             (label: { name: any }) => label.name,
+  //           );
+  //         }
 
-          return result;
-        } catch (error) {
-          console.error(`Error processing space type ${spaceType}:`, error);
-          return null;
-        }
-      },
-    );
+  //         return result;
+  //       } catch (error) {
+  //         console.error(`Error processing space type ${spaceType}:`, error);
+  //         return null;
+  //       }
+  //     },
+  //   );
 
-    // Wait for all space processing to complete and filter out null results
-    const spaceResults = await Promise.all(createSpacePromises);
+  //   // Wait for all space processing to complete and filter out null results
+  //   const spaceResults = await Promise.all(createSpacePromises);
 
-    // Fix the type predicate to match SpaceClassificationResult
-    return spaceResults.filter(
-      (result): result is SpaceClassificationResult => result !== null,
-    );
-  }
+  //   // Fix the type predicate to match SpaceClassificationResult
+  //   return spaceResults.filter(
+  //     (result): result is SpaceClassificationResult => result !== null,
+  //   );
+  // }
 
   /**
    * Create a incident from an image URL by:
@@ -768,102 +767,116 @@ export class IncidentService {
    * 3. Classifying the image
    * 4. Creating the incident based on classification
    */
-  async createIncidentFromImage(
-    propertyId: number,
-    imageUrl: string,
-    userId: string,
-    metadata?: any,
-  ): Promise<IncidentWithFullRelations> {
-    // Check if property exists
-    const propertyExists = await this.incidentRepo.propertyExists(propertyId);
-    if (!propertyExists) {
-      throw new NotFoundError("Property not found");
-    }
+  // async createIncidentFromImage(
+  //   propertyId: number,
+  //   imageUrl: string,
+  //   metadata?: any,
+  // ): Promise<IncidentWithFullRelations> {
+  //   // Check if property exists
+  //   const propertyExists = await this.incidentRepo.propertyExists(propertyId);
+  //   if (!propertyExists) {
+  //     throw new NotFoundError("Property not found");
+  //   }
 
-    // Create a temporary space to associate with the image
-    const tempSpace = await this.incidentRepo.createIncident({
-      propertyId,
-      incidentType: "Temporary",
-      description: `Temp ${new Date().toISOString()}`,
-      reportedAt: new Date(),
-      resolvedAt: null,
-      severity: IncidentSeverity.Low,
-      status: IncidentStatus.Open,
-      spaceType: SpaceType.Unknown,
-      aiClassified: true,
-      featureVector: Prisma.JsonNull,
-    });
+  //   // Create a temporary space to associate with the image
+  //   const tempSpace = await this.incidentRepo.createIncident({
+  //     propertyId,
+  //     incidentType: "Temporary",
+  //     description: `Temp ${new Date().toISOString()}`,
+  //     reportedAt: new Date(),
+  //     resolvedAt: null,
+  //     severity: IncidentSeverity.Low,
+  //     status: IncidentStatus.Open,
+  //     spaceType: SpaceType.Unknown,
+  //     aiClassified: true,
+  //     featureVector: Prisma.JsonNull,
+  //   });
 
-    try {
-      // Upload the image using the existing bulkUploadSpaceImages method
-      const currentDate = new Date();
-      const uploadedImages = await this.bulkUploadIncidentImages(tempSpace.id, [
-        {
-          imageUrl,
-          takenAt: currentDate,
-          metadata,
-        },
-      ]);
+  //   try {
+  //     // Upload the image using the existing bulkUploadSpaceImages method
+  //     const currentDate = new Date();
+  //     const uploadedImages = await this.bulkUploadIncidentImages(tempSpace.id, [
+  //       {
+  //         imageUrl,
+  //         takenAt: currentDate,
+  //         metadata,
+  //       },
+  //     ]);
 
-      if (uploadedImages.length === 0) {
-        throw new ConflictError("Failed to upload image");
-      }
+  //     if (uploadedImages.length === 0) {
+  //       throw new ConflictError("Failed to upload image");
+  //     }
 
-      const propertyImage = uploadedImages[0];
+  //     const propertyImage = uploadedImages[0];
 
-      // Use both classification services together
-      // 1. First classify the image with space classification
-      const spaceClassification =
-        await this.spaceClassificationService.classifyImage(imageUrl);
+  //     // OPTIMIZATION: Use unified detection with single Rekognition call
+  //     const {
+  //       incident: incidentClassification,
+  //       space: spaceClassification,
+  //       labeledImagePromise,
+  //     } = await this.incidentClassificationService.detectIncidentsAndSpace(
+  //       propertyImage as PropertyImage,
+  //       [],
+  //       propertyId,
+  //     );
 
-      const incidentClassification =
-        await this.incidentClassificationService.detectIncidents(
-          propertyImage as PropertyImage,
-          [],
-          propertyId,
-        );
+  //     console.log(
+  //       `[SERVICE] Unified classification complete with 1 Rekognition call: space=${spaceClassification.spaceType}, incident=${incidentClassification.incidentType}`,
+  //     );
 
-      console.log(
-        `[SERVICE] Incident classification result: ${JSON.stringify({
-          type: incidentClassification.incidentType,
-          severity: incidentClassification.severity,
-          labeledImageUrl: incidentClassification.labeledImageUrl
-            ? "present"
-            : "missing",
-        })}`,
-      );
+  //     // 3. Create a properly classified incident with combined results
+  //     const newIncident = await this.incidentRepo.createIncident({
+  //       propertyId,
+  //       incidentType: incidentClassification.incidentType || "Unknown Issue",
+  //       description: `Incident in ${spaceClassification.spaceType} - ${new Date().toISOString().slice(0, 10)}`,
+  //       reportedAt: new Date(),
+  //       resolvedAt: null,
+  //       severity: incidentClassification.severity || IncidentSeverity.Low,
+  //       status: IncidentStatus.Open,
+  //       spaceType: spaceClassification.spaceType,
+  //       featureVector: incidentClassification.featureVector || Prisma.JsonNull,
+  //       aiClassified: true,
+  //       labeledImageUrl: null, // Will be updated asynchronously
+  //     });
 
-      // 3. Create a properly classified incident with combined results
-      const newIncident = await this.incidentRepo.createIncident({
-        propertyId,
-        incidentType: incidentClassification.incidentType || "Unknown Issue",
-        description: `Incident in ${spaceClassification.spaceType} - ${new Date().toISOString().slice(0, 10)}`,
-        reportedAt: new Date(),
-        resolvedAt: null,
-        severity: incidentClassification.severity || IncidentSeverity.Low,
-        status: IncidentStatus.Open,
-        spaceType: spaceClassification.spaceType,
-        featureVector: incidentClassification.featureVector || Prisma.JsonNull,
-        aiClassified: true,
-        labeledImageUrl: incidentClassification.labeledImageUrl,
-      });
+  //     // 4. Associate the image with the new incident
+  //     await this.incidentRepo.associateImagesWithIncident(newIncident.id, [
+  //       propertyImage.id,
+  //     ]);
 
-      // 4. Associate the image with the new incident
-      await this.incidentRepo.associateImagesWithIncident(newIncident.id, [
-        propertyImage.id,
-      ]);
+  //     // Delete the temporary space as we now have a properly classified one
+  //     await this.deleteIncident(tempSpace.id);
 
-      // Delete the temporary space as we now have a properly classified one
-      await this.deleteIncident(tempSpace.id);
+  //     // OPTIMIZATION: Handle labeled image generation asynchronously
+  //     if (labeledImagePromise) {
+  //       // Don't wait for the labeled image, update it in the background
+  //       labeledImagePromise.then(async (labeledImageUrl) => {
+  //         if (labeledImageUrl) {
+  //           try {
+  //             await this.incidentRepo.updateIncident(newIncident.id, {
+  //               labeledImageUrl,
+  //             });
+  //             console.log(
+  //               `[SERVICE] Updated incident ${newIncident.id} with labeled image: ${labeledImageUrl}`,
+  //             );
+  //           } catch (error) {
+  //             console.error(
+  //               `[SERVICE] Failed to update labeled image for incident ${newIncident.id}:`,
+  //               error,
+  //             );
+  //           }
+  //         }
+  //       });
+  //     }
 
-      // Return the full incident details
-      return this.getIncidentById(newIncident.id);
-    } catch (error) {
-      // Clean up the temporary space if anything fails
-      await this.deleteIncident(tempSpace.id).catch(() => {
-        // Ignore errors during cleanup
-      });
-      throw error;
-    }
-  }
+  //     // Return the full incident details
+  //     return this.getIncidentById(newIncident.id);
+  //   } catch (error) {
+  //     // Clean up the temporary space if anything fails
+  //     await this.deleteIncident(tempSpace.id).catch(() => {
+  //       // Ignore errors during cleanup
+  //     });
+  //     throw error;
+  //   }
+  // }
 }

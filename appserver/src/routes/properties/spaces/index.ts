@@ -966,156 +966,156 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // GET /property-spaces/:id/similar
-  fastify.route({
-    method: "GET",
-    url: "/:id/similar",
-    onRequest: [fastify.authenticate],
-    schema: {
-      tags: ["property-spaces"],
-      description: "Get similar spaces based on feature vectors",
-      summary: "Get similar spaces",
-      params: {
-        type: "object",
-        properties: {
-          id: {
-            type: "string",
-            pattern: "^\\d+$",
-            description: "Property Space ID",
-          },
-        },
-        required: ["id"],
-      },
-      querystring: {
-        type: "object",
-        properties: {
-          limit: {
-            type: "integer",
-            minimum: 1,
-            maximum: 20,
-            default: 5,
-            description: "Maximum number of similar spaces to return",
-          },
-        },
-      },
-      response: {
-        200: propertySpaceSchemas.spacesListResponseSchema,
-        404: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 404 },
-                message: {
-                  type: "string",
-                  example: "Property space not found",
-                },
-              },
-            },
-          },
-        },
-        409: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 409 },
-                message: {
-                  type: "string",
-                  example:
-                    "Space does not have feature vector for similarity comparison",
-                },
-              },
-            },
-          },
-        },
-      },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
-    },
-    handler: async (request, reply) => {
-      const { id } = request.params as ParamsWithId;
-      const { limit } = request.query as { limit?: string };
+  // fastify.route({
+  //   method: "GET",
+  //   url: "/:id/similar",
+  //   onRequest: [fastify.authenticate],
+  //   schema: {
+  //     tags: ["property-spaces"],
+  //     description: "Get similar spaces based on feature vectors",
+  //     summary: "Get similar spaces",
+  //     params: {
+  //       type: "object",
+  //       properties: {
+  //         id: {
+  //           type: "string",
+  //           pattern: "^\\d+$",
+  //           description: "Property Space ID",
+  //         },
+  //       },
+  //       required: ["id"],
+  //     },
+  //     querystring: {
+  //       type: "object",
+  //       properties: {
+  //         limit: {
+  //           type: "integer",
+  //           minimum: 1,
+  //           maximum: 20,
+  //           default: 5,
+  //           description: "Maximum number of similar spaces to return",
+  //         },
+  //       },
+  //     },
+  //     response: {
+  //       200: propertySpaceSchemas.spacesListResponseSchema,
+  //       404: {
+  //         type: "object",
+  //         properties: {
+  //           error: {
+  //             type: "object",
+  //             properties: {
+  //               statusCode: { type: "number", example: 404 },
+  //               message: {
+  //                 type: "string",
+  //                 example: "Property space not found",
+  //               },
+  //             },
+  //           },
+  //         },
+  //       },
+  //       409: {
+  //         type: "object",
+  //         properties: {
+  //           error: {
+  //             type: "object",
+  //             properties: {
+  //               statusCode: { type: "number", example: 409 },
+  //               message: {
+  //                 type: "string",
+  //                 example:
+  //                   "Space does not have feature vector for similarity comparison",
+  //               },
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //     security: [
+  //       {
+  //         bearerAuth: [],
+  //       },
+  //     ],
+  //   },
+  //   handler: async (request, reply) => {
+  //     const { id } = request.params as ParamsWithId;
+  //     const { limit } = request.query as { limit?: string };
 
-      try {
-        const similarSpaces = await propertySpaceService.getSimilarSpaces(
-          parseInt(id),
-          limit ? parseInt(limit) : undefined,
-        );
-        return similarSpaces;
-      } catch (err) {
-        if (err instanceof NotFoundError) {
-          return sendNotFound(reply, "Property space not found");
-        }
-        if (err instanceof ConflictError) {
-          return sendConflict(reply, err.message);
-        }
-        throw err;
-      }
-    },
-  });
+  //     try {
+  //       const similarSpaces = await propertySpaceService.getSimilarSpaces(
+  //         parseInt(id),
+  //         limit ? parseInt(limit) : undefined,
+  //       );
+  //       return similarSpaces;
+  //     } catch (err) {
+  //       if (err instanceof NotFoundError) {
+  //         return sendNotFound(reply, "Property space not found");
+  //       }
+  //       if (err instanceof ConflictError) {
+  //         return sendConflict(reply, err.message);
+  //       }
+  //       throw err;
+  //     }
+  //   },
+  // });
 
   // POST /property-spaces/property/:propertyId/reclassify
-  fastify.route({
-    method: "POST",
-    url: "/property/:propertyId/reclassify",
-    onRequest: [fastify.authenticate],
-    schema: {
-      tags: ["property-spaces"],
-      description: "Reclassify all spaces for a property",
-      summary: "Reclassify property spaces",
-      params: {
-        type: "object",
-        properties: {
-          propertyId: {
-            type: "string",
-            pattern: "^\\d+$",
-            description: "Property ID",
-          },
-        },
-        required: ["propertyId"],
-      },
-      response: {
-        200: propertySpaceSchemas.multipleClassificationResponseSchema,
-        404: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 404 },
-                message: { type: "string", example: "Property not found" },
-              },
-            },
-          },
-        },
-      },
-      security: [
-        {
-          bearerAuth: [],
-        },
-      ],
-    },
-    handler: async (request, reply) => {
-      const { propertyId } = request.params as ParamsWithPropertyId;
+  // fastify.route({
+  //   method: "POST",
+  //   url: "/property/:propertyId/reclassify",
+  //   onRequest: [fastify.authenticate],
+  //   schema: {
+  //     tags: ["property-spaces"],
+  //     description: "Reclassify all spaces for a property",
+  //     summary: "Reclassify property spaces",
+  //     params: {
+  //       type: "object",
+  //       properties: {
+  //         propertyId: {
+  //           type: "string",
+  //           pattern: "^\\d+$",
+  //           description: "Property ID",
+  //         },
+  //       },
+  //       required: ["propertyId"],
+  //     },
+  //     response: {
+  //       200: propertySpaceSchemas.multipleClassificationResponseSchema,
+  //       404: {
+  //         type: "object",
+  //         properties: {
+  //           error: {
+  //             type: "object",
+  //             properties: {
+  //               statusCode: { type: "number", example: 404 },
+  //               message: { type: "string", example: "Property not found" },
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //     security: [
+  //       {
+  //         bearerAuth: [],
+  //       },
+  //     ],
+  //   },
+  //   handler: async (request, reply) => {
+  //     const { propertyId } = request.params as ParamsWithPropertyId;
 
-      try {
-        const results = await propertySpaceService.reclassifyPropertySpaces(
-          parseInt(propertyId),
-        );
-        return results;
-      } catch (err) {
-        if (err instanceof NotFoundError) {
-          return sendNotFound(reply, "Property not found");
-        }
-        throw err;
-      }
-    },
-  });
+  //     try {
+  //       const results = await propertySpaceService.reclassifyPropertySpaces(
+  //         parseInt(propertyId),
+  //       );
+  //       return results;
+  //     } catch (err) {
+  //       if (err instanceof NotFoundError) {
+  //         return sendNotFound(reply, "Property not found");
+  //       }
+  //       throw err;
+  //     }
+  //   },
+  // });
 }
 
 export default propertySpaceRoutes;

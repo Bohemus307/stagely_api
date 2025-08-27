@@ -9,34 +9,48 @@ import {
   PropertyImage,
   Prisma,
 } from "@prisma/client";
-import { SpaceClassificationService } from "../../properties/spaces/classification";
-import { ImageProcessor } from "../../properties/spaces/classification/imageProcessor";
 import {
   S3Config,
   IncidentDetectionResult,
   ComparisonConfig,
   DetectedChange,
   DetectedLabel,
-  BoundingBox,
 } from "./comparisonTypes";
 import { ImageComparisonProcessor } from "./imageComparison";
 import { IncidentLabelProcessor } from "./incidentLabelProcessor";
 import { SeverityAssessor } from "./severityAssesor";
+import { ClaudeClassificationService } from "../../properties/spaces/classification/claudeClassifier";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
+const extractS3Key = (imageUrl: string): string => {
+  try {
+    const urlObj = new URL(imageUrl);
+    // Strip any leading slash for consistent key format
+    return urlObj.pathname.startsWith("/")
+      ? urlObj.pathname.substring(1)
+      : urlObj.pathname;
+  } catch (e) {
+    // If URL parsing fails, assume the URL is the key
+    return imageUrl;
+  }
+};
 /**
  * Service for detecting incidents and comparing images
  */
 export class IncidentClassificationService {
   private rekognition: RekognitionClient;
   private s3Config: S3Config;
-  private imageProcessor: ImageProcessor;
+  private s3Client: S3Client;
+  private s3Bucket: string;
   private labelProcessor: IncidentLabelProcessor;
   private comparisonProcessor: ImageComparisonProcessor;
   private severityAssessor: SeverityAssessor;
-  private spaceClassifier: SpaceClassificationService;
+  private spaceClassifier: ClaudeClassificationService;
 
   constructor(
     s3Config: S3Config,
+    s3Client: S3Client,
+    s3Bucket: string,
     comparisonConfig?: Partial<ComparisonConfig>,
   ) {
     this.rekognition = new RekognitionClient({
@@ -47,15 +61,75 @@ export class IncidentClassificationService {
     });
 
     this.s3Config = s3Config;
-    this.imageProcessor = new ImageProcessor(s3Config.client, s3Config.bucket);
+    this.s3Client = s3Client;
+    this.s3Bucket = s3Bucket;
     this.labelProcessor = new IncidentLabelProcessor();
     this.comparisonProcessor = new ImageComparisonProcessor(comparisonConfig);
     this.severityAssessor = new SeverityAssessor();
-    this.spaceClassifier = new SpaceClassificationService(s3Config);
+    this.spaceClassifier = new ClaudeClassificationService(s3Config);
 
     console.log(
       `[INIT] IncidentClassificationService initialized successfully`,
     );
+  }
+  /**
+   * Get optimized image data from S3 with adaptive quality
+   */
+  async getOptimizedImageFromS3(key: string): Promise<Buffer> {
+    try {
+      const now = Date.now();
+
+      try {
+        const command = new GetObjectCommand({
+          Bucket: this.s3Bucket,
+          Key: key,
+          Range: "bytes=0-4194304", // First 4MB - enough for most images
+        });
+        const response = await this.s3Client.send(command);
+
+        if (response.Body) {
+          // Convert stream to buffer efficiently
+          const chunks: Buffer[] = [];
+          for await (const chunk of response.Body as any) {
+            chunks.push(Buffer.from(chunk));
+          }
+
+          const originalBuffer = Buffer.concat(chunks);
+
+          return originalBuffer;
+        }
+      } catch (rangeError) {
+        // Range request failed, fall back to full image
+        console.warn(
+          `Range request failed for ${key}, getting full image: ${rangeError}`,
+        );
+      }
+
+      // Fall back to getting the full image if needed
+      const fullCommand = new GetObjectCommand({
+        Bucket: this.s3Bucket,
+        Key: key,
+      });
+
+      const fullResponse = await this.s3Client.send(fullCommand);
+
+      if (!fullResponse.Body) {
+        throw new Error("Empty response from S3");
+      }
+
+      // Convert stream to buffer
+      const fullChunks: Buffer[] = [];
+      for await (const chunk of fullResponse.Body as any) {
+        fullChunks.push(Buffer.from(chunk));
+      }
+
+      const fullBuffer = Buffer.concat(fullChunks);
+
+      return fullBuffer;
+    } catch (error) {
+      console.error("Error getting image from S3:", error);
+      throw new Error(`Failed to get image from S3: ${error}`);
+    }
   }
 
   /**
@@ -73,9 +147,8 @@ export class IncidentClassificationService {
 
     try {
       // Get optimized image data for the new image
-      const imageKey = this.imageProcessor.extractS3Key(newImage.imageUrl);
-      const imageData =
-        await this.imageProcessor.getOptimizedImageFromS3(imageKey);
+      const imageKey = extractS3Key(newImage.imageUrl);
+      const imageData = await this.getOptimizedImageFromS3(imageKey);
 
       // Detect labels in the new image
       const newImageLabels = await this.detectLabels(imageData);
@@ -102,11 +175,9 @@ export class IncidentClassificationService {
         const mostRecentImage = sortedPrevImages[0];
 
         // Get labels for previous image
-        const previousImageKey = this.imageProcessor.extractS3Key(
-          mostRecentImage.imageUrl,
-        );
+        const previousImageKey = extractS3Key(mostRecentImage.imageUrl);
         const previousImageData =
-          await this.imageProcessor.getOptimizedImageFromS3(previousImageKey);
+          await this.getOptimizedImageFromS3(previousImageKey);
         const previousImageLabels = await this.detectLabels(previousImageData);
         const previousDetectedLabels =
           this.convertToDetectedLabels(previousImageLabels);
@@ -155,34 +226,6 @@ export class IncidentClassificationService {
         detectedObjects: detectedLabels.map((l) => l.name),
       };
 
-      // Generate labeled image if propertyId and userId are provided and there are labels to show
-      let labeledImageUrl: string | undefined;
-      if (propertyId && detectedLabels.length > 0) {
-        try {
-          console.log(
-            `[INCIDENT-DETECT] Attempting to generate labeled image with propertyId=${propertyId}, labels=${detectedLabels.length}, imageKey=${imageKey}`,
-          );
-          labeledImageUrl = await this.imageProcessor.drawBoundingBoxesOnImage(
-            imageKey,
-            detectedLabels,
-            propertyId,
-          );
-          console.log(
-            `[INCIDENT-DETECT] Successfully generated labeled image: ${labeledImageUrl}`,
-          );
-        } catch (imageError) {
-          console.error(
-            `[INCIDENT-DETECT] Error generating labeled image for propertyId=${propertyId}`,
-            imageError,
-          );
-          // Continue without labeled image if generation fails
-        }
-      } else {
-        console.log(
-          `[INCIDENT-DETECT] Not generating labeled image: propertyId=${propertyId}, labels=${detectedLabels.length}`,
-        );
-      }
-
       // Create final result
       const result: IncidentDetectionResult = {
         incidentType: finalIncidentType,
@@ -192,12 +235,11 @@ export class IncidentClassificationService {
         detectedLabels,
         changes,
         featureVector,
-        labeledImageUrl,
       };
 
       const totalTime = Date.now() - startTime;
       console.log(
-        `[INCIDENT-DETECT] Detection completed in ${totalTime}ms. Result: Type=${finalIncidentType}, Severity=${finalSeverity}, Changes=${changes.length}, LabeledImage=${labeledImageUrl ? "Yes" : "No"}`,
+        `[INCIDENT-DETECT] Detection completed in ${totalTime}ms. Result: Type=${finalIncidentType}, Severity=${finalSeverity}, Changes=${changes.length}`,
       );
 
       return result;
@@ -334,5 +376,146 @@ export class IncidentClassificationService {
     const previousImages = sortedImages.slice(1);
 
     return this.detectIncidents(newImage, previousImages, propertyId);
+  }
+
+  /**
+   * OPTIMIZED: Detect incidents and classify space with a single Rekognition call
+   * Returns both incident and space classification results
+   */
+  async detectIncidentsAndSpace(
+    newImage: PropertyImage,
+    previousImages: PropertyImage[] = [],
+  ): Promise<{
+    incident: IncidentDetectionResult;
+    space: {
+      spaceType: SpaceType;
+      confidenceScore: number;
+      labels: string[];
+      featureVector: any;
+    };
+    labeledImagePromise?: Promise<string | undefined>;
+  }> {
+    console.log(
+      `[UNIFIED-DETECT] Starting unified detection for image: ${newImage.imageUrl} (ID: ${newImage.id})`,
+    );
+    const startTime = Date.now();
+
+    try {
+      // Get optimized image data ONCE
+      const imageKey = extractS3Key(newImage.imageUrl);
+      const imageData = await this.getOptimizedImageFromS3(imageKey);
+
+      // Call Rekognition ONCE
+      const labels = await this.detectLabels(imageData);
+      console.log(
+        `[UNIFIED-DETECT] Got ${labels.length} labels from single Rekognition call`,
+      );
+
+      // Process labels for incident detection
+      const {
+        incidentType,
+        severity: initialSeverity,
+        confidence,
+        detectedLabels,
+      } = this.labelProcessor.processLabelsForIncidents(labels);
+
+      // Process the same labels for space classification (reuse SpaceClassifier's label processor)
+      const spaceClassification = await this.spaceClassifier.classifyImage(
+        newImage.imageUrl,
+      );
+
+      // Handle change detection if previous images exist
+      let changes: DetectedChange[] = [];
+      if (previousImages.length > 0) {
+        const sortedPrevImages = [...previousImages].sort(
+          (a, b) => b.takenAt.getTime() - a.takenAt.getTime(),
+        );
+        const mostRecentImage = sortedPrevImages[0];
+
+        const previousImageKey = extractS3Key(mostRecentImage.imageUrl);
+        const previousImageData =
+          await this.getOptimizedImageFromS3(previousImageKey);
+        const previousImageLabels = await this.detectLabels(previousImageData);
+        const previousDetectedLabels =
+          this.convertToDetectedLabels(previousImageLabels);
+
+        changes = this.comparisonProcessor.compareImageLabels(
+          previousDetectedLabels,
+          detectedLabels,
+        );
+      }
+
+      // Assess final severity
+      const finalSeverity = this.severityAssessor.assessSeverity(
+        changes,
+        initialSeverity,
+      );
+
+      const finalIncidentType =
+        confidence >= 0.8 ? incidentType : "Unknown Issue";
+
+      // Create feature vector
+      const featureVector: Prisma.JsonValue = {
+        incidentType: finalIncidentType,
+        severity: finalSeverity,
+        confidence,
+        spaceType: spaceClassification.spaceType,
+        changeCount: changes.length,
+        changeTypes: changes.map((c) => c.changeType),
+        detectedObjects: detectedLabels.map((l) => l.name),
+      };
+
+      // Create results
+      const incidentResult: IncidentDetectionResult = {
+        incidentType: finalIncidentType,
+        severity: finalSeverity,
+        confidenceScore: confidence,
+        spaceType: spaceClassification.spaceType,
+        detectedLabels,
+        changes,
+        featureVector,
+        labeledImageUrl: undefined, // Will be set from promise if needed
+      };
+
+      const spaceResult = {
+        spaceType: spaceClassification.spaceType,
+        confidenceScore: spaceClassification.confidenceScore,
+        labels: spaceClassification.labels,
+        featureVector: spaceClassification.featureVector,
+      };
+
+      const totalTime = Date.now() - startTime;
+      console.log(
+        `[UNIFIED-DETECT] Completed in ${totalTime}ms with 1 Rekognition call. Space=${spaceResult.spaceType}, Incident=${incidentResult.incidentType}`,
+      );
+
+      return {
+        incident: incidentResult,
+        space: spaceResult,
+      };
+    } catch (error) {
+      console.error(
+        `[UNIFIED-DETECT] ERROR: ${error instanceof Error ? error.message : String(error)}`,
+      );
+
+      // Return defaults
+      return {
+        incident: {
+          incidentType: "Unknown Issue",
+          severity: IncidentSeverity.Low,
+          confidenceScore: 0.3,
+          spaceType: null,
+          detectedLabels: [],
+          changes: [],
+          featureVector: {},
+        },
+        space: {
+          spaceType: SpaceType.Unknown,
+          confidenceScore: 0,
+          labels: [],
+          featureVector: {},
+        },
+      };
+    }
   }
 }
