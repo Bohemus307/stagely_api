@@ -262,7 +262,6 @@ export async function compareRoomImages(
 
   console.log("Analyzing images with Claude Vision...");
 
-  // Analyze with Claude
   const claudeResult = await analyzeWithClaude(
     bedrockClient,
     sourceBuffer,
@@ -273,9 +272,9 @@ export async function compareRoomImages(
     added: claudeResult.added_items.length,
     removed: claudeResult.removed_items.length,
     moved: claudeResult.moved_items.length,
+    changed: claudeResult.overall_changes,
   });
 
-  // Upload to S3
   const imageKey = generateImageKey();
   const comparisonImageUrl = await uploadToS3(
     s3Client,
@@ -285,7 +284,6 @@ export async function compareRoomImages(
     imageKey,
   );
 
-  // Format response
   return {
     addedItems: claudeResult.added_items,
     removedItems: claudeResult.removed_items,

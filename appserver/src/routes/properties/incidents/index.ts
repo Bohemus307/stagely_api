@@ -12,6 +12,7 @@ import { IncidentService } from "../../../services/incidents";
 import { PropertySpaceService } from "../../../services/properties/spaces";
 import { compareRoomImages } from "../../../services/imageComparisonService";
 import { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { InputJsonObject } from "@prisma/client/runtime/library";
 
 // Define route parameter types
 interface ParamsWithId {
@@ -1132,20 +1133,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           severity: incidentData.severity,
           status: incidentData.status || IncidentStatus.Open,
           images: incidentData.images,
-          featureVector: JSON.parse(
-            JSON.stringify({
-              imageComparison: {
-                referenceImageUrl,
-                comparisonImageUrl: incidentData.images[0].imageUrl,
-                addedItems: comparisonResult.addedItems,
-                removedItems: comparisonResult.removedItems,
-                movedItems: comparisonResult.movedItems,
-                summary: comparisonResult.summary,
-                claudeAnalysis: comparisonResult.claudeAnalysis,
-                comparedAt: new Date().toISOString(),
-              },
-            }),
-          ),
+          featureVector: comparisonResult as unknown as InputJsonObject,
         });
 
         reply.code(201);
