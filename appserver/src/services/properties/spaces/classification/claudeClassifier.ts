@@ -96,7 +96,7 @@ Respond ONLY with a JSON object in this exact format:
   "confidence": "high|medium|low",
   "confidenceScore": 0.0-1.0,
   "suggestedName": "Brief descriptive name",
-  "description": "One sentence description of what you see",
+  "description": "Two sentence description of what you see",
   "labels": ["list", "of", "objects", "and", "features", "you", "can", "identify", "max", "50", "items"]
 }
 
