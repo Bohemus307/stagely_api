@@ -1118,6 +1118,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             );
           referenceImageUrl = recentSpaceImage?.imageUrl;
         }
+        console.log("[REFERENCE IMAGE URL]: ", referenceImageUrl);
 
         const comparisonResult = await compareRoomImages(
           bedrockClient,

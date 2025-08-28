@@ -64,11 +64,19 @@ export interface RoomComparisonResponse {
 /**
  * Fetch image from URL
  */
-export async function getImageFromUrl(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image: ${response.statusText}`);
-  }
+async function getImageFromUrl(url: string): Promise<Buffer> {
+  const cloudFrontUrl = url.includes("amazonaws.com")
+    ? url.replace(
+        /https:\/\/[^\/]+amazonaws\.com\//,
+        "https://d24y6hzot6c372.cloudfront.net/",
+      )
+    : url;
+
+  const response = await fetch(cloudFrontUrl, {
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+
+  if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
   return Buffer.from(await response.arrayBuffer());
 }
 
