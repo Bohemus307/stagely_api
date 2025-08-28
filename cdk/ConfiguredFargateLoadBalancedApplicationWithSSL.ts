@@ -96,9 +96,9 @@ export class ConfiguredFargateGateway extends Construct {
       {
         cluster: this.cluster,
         listenerPort: 443,
-        memoryLimitMiB: 1024,
+        memoryLimitMiB: 2048,
         desiredCount: props.desiredCount,
-        cpu: 512,
+        cpu: 1024,
         taskImageOptions: {
           containerPort: 3000,
           image: ecs.ContainerImage.fromEcrRepository(
