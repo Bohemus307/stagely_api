@@ -1,8 +1,13 @@
-# Start with a Node.js 20 Alpine image for smaller size
 FROM node:24-alpine AS build
 
-RUN apk add --no-cache fontconfig ttf-liberation && \
-    fc-cache -f -v
+# Install system dependencies including HEIF support
+RUN apk add --no-cache \
+    fontconfig \
+    ttf-liberation \
+    libheif \
+    libheif-dev \
+    vips-dev \
+    && fc-cache -f -v
 
 # Set working directory
 WORKDIR /app
@@ -17,6 +22,9 @@ COPY prisma ./prisma/
 # Install all dependencies
 RUN pnpm install --frozen-lockfile
 
+# Rebuild sharp with HEIF support after installing dependencies
+RUN npm rebuild sharp
+
 # Generate Prisma client BEFORE copying all source code
 RUN npx prisma generate
 
@@ -29,8 +37,13 @@ RUN pnpm run build
 # Create production image
 FROM node:24-alpine
 
-RUN apk add --no-cache fontconfig ttf-liberation && \
-    fc-cache -f -v
+# Install system dependencies including HEIF support for production
+RUN apk add --no-cache \
+    fontconfig \
+    ttf-liberation \
+    libheif \
+    vips \
+    && fc-cache -f -v
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -52,6 +65,7 @@ COPY prisma ./prisma/
 
 # Install production dependencies and generate Prisma client
 RUN pnpm install --frozen-lockfile --prod && \
+    npm rebuild sharp && \
     npx prisma generate
 
 # Copy compiled JavaScript from build stage
