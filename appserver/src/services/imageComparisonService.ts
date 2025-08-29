@@ -195,7 +195,7 @@ Positions are percentages from top-left corner.`;
     // Try to parse the JSON response
     try {
       const result = JSON.parse(content);
-      return result as ClaudeComparisonResult;
+      return result;
     } catch (parseError) {
       // If parsing fails, try to extract JSON from the response
       const jsonMatch = content.match(/\{[\s\S]*\}/);

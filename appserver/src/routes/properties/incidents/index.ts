@@ -293,7 +293,78 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               nullable: true,
             },
             aiClassified: { type: "boolean" },
-            featureVector: { type: "object", nullable: true },
+            featureVector: {
+              type: "object",
+              nullable: true,
+              properties: {
+                addedItems: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      position: {
+                        type: "object",
+                        properties: {
+                          left: { type: "number" },
+                          top: { type: "number" },
+                        },
+                      },
+                    },
+                  },
+                },
+                removedItems: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      position: {
+                        type: "object",
+                        properties: {
+                          left: { type: "number" },
+                          top: { type: "number" },
+                        },
+                      },
+                    },
+                  },
+                },
+                movedItems: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      item: { type: "string" },
+                      from: {
+                        type: "object",
+                        properties: {
+                          left: { type: "number" },
+                          top: { type: "number" },
+                        },
+                      },
+                      to: {
+                        type: "object",
+                        properties: {
+                          left: { type: "number" },
+                          top: { type: "number" },
+                        },
+                      },
+                    },
+                  },
+                },
+                comparisonImageUrl: { type: "string" },
+                summary: {
+                  type: "object",
+                  properties: {
+                    totalAdded: { type: "number" },
+                    totalRemoved: { type: "number" },
+                    totalMoved: { type: "number" },
+                    overallChanges: { type: "string" },
+                  },
+                },
+                claudeAnalysis: { type: "string" },
+              },
+            },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
             property: {
@@ -364,24 +435,6 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
       try {
         const incident = await incidentService.getIncidentById(parseInt(id));
-
-        // Verify property belongs to authenticated user
-        const user = await fastify.prisma.user.findUnique({
-          where: { auth0Id: request?.user?.sub },
-        });
-
-        // TODO: switch to SERVICE!!!!!!!!!
-        const property = await fastify.prisma.property.findUnique({
-          where: { id: incident.propertyId },
-          select: { userId: true },
-        });
-
-        if (!user || !property || property.userId !== user.id) {
-          return sendUnauthorized(
-            reply,
-            "You don't have permission to access this incident",
-          );
-        }
 
         return incident;
       } catch (err) {
@@ -1082,7 +1135,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       const incidentData = request.body as any;
 
       try {
-        // Get user by id and verify its auth0 id matches
+        // Get user by id and verify its id matches
         const user = await fastify.prisma.user.findUnique({
           where: { id: incidentData.userId },
         });
@@ -1124,6 +1177,8 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           incidentData.images[0].imageUrl,
         );
 
+        console.log("[COMPARISON RESULT]: ", comparisonResult);
+
         let incident;
         incident = await incidentService.createIncident({
           propertyId: property.id,
@@ -1133,7 +1188,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           severity: incidentData.severity,
           status: incidentData.status || IncidentStatus.Open,
           images: incidentData.images,
-          featureVector: comparisonResult as unknown as InputJsonObject,
+          featureVector: comparisonResult as unknown as Prisma.InputJsonObject,
         });
 
         reply.code(201);
