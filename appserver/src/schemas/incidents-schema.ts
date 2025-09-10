@@ -36,6 +36,74 @@ const incidentBaseSchema = {
     featureVector: {
       type: "object",
       nullable: true,
+      properties: {
+        addedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              position: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        removedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              position: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        movedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              item: { type: "string" },
+              from: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+              to: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        comparisonImageUrl: { type: "string" },
+        summary: {
+          type: "object",
+          properties: {
+            totalAdded: { type: "number" },
+            totalRemoved: { type: "number" },
+            totalMoved: { type: "number" },
+            overallChanges: { type: "string" },
+          },
+        },
+        claudeAnalysis: { type: "string" },
+      },
     },
   },
 };
@@ -192,7 +260,78 @@ const incidentImageSchema = {
     caption: { type: "string", nullable: true },
     takenAt: { type: "string", format: "date-time" },
     metadata: { type: "object", nullable: true },
-    featureVector: { type: "object", nullable: true },
+    featureVector: {
+      type: "object",
+      nullable: true,
+      properties: {
+        addedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              position: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        removedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              position: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        movedItems: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              item: { type: "string" },
+              from: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+              to: {
+                type: "object",
+                properties: {
+                  left: { type: "number" },
+                  top: { type: "number" },
+                },
+              },
+            },
+          },
+        },
+        comparisonImageUrl: { type: "string" },
+        summary: {
+          type: "object",
+          properties: {
+            totalAdded: { type: "number" },
+            totalRemoved: { type: "number" },
+            totalMoved: { type: "number" },
+            overallChanges: { type: "string" },
+          },
+        },
+        claudeAnalysis: { type: "string" },
+      },
+    },
     createdAt: { type: "string", format: "date-time" },
     updatedAt: { type: "string", format: "date-time" },
   },
