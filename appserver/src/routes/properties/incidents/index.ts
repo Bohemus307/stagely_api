@@ -151,6 +151,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
                     nullable: true,
                   },
                   aiClassified: { type: "boolean" },
+                  featureVector: { type: "object", nullable: true },
                   createdAt: { type: "string", format: "date-time" },
                   updatedAt: { type: "string", format: "date-time" },
                   property: {
@@ -222,7 +223,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         return sendUnauthorized(reply, "User not found");
       }
 
-      // Get the properties that belong to this user
+      // WHY
       const userProperties = await fastify.prisma.property.findMany({
         where: { userId: user.id },
         select: { id: true },
@@ -230,7 +231,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
 
       const propertyIds = userProperties.map((p) => p.id);
 
-      // Add propertyIds to query params to restrict to user's properties
+      // WHY
       const queryParams = {
         ...(request.query as any),
         propertyId: (request.query as any).propertyId
@@ -525,6 +526,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
               nullable: true,
             },
             aiClassified: { type: "boolean" },
+            featureVector: { type: "object", nullable: true },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
           },
@@ -1126,6 +1128,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
             },
             createdAt: { type: "string", format: "date-time" },
             updatedAt: { type: "string", format: "date-time" },
+            featureVector: { type: "object", nullable: true },
           },
         },
       },
