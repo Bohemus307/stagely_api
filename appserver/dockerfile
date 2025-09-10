@@ -64,7 +64,7 @@ COPY package.json pnpm-lock.yaml* ./
 COPY prisma ./prisma/
 
 # Install production dependencies and generate Prisma client
-RUN pnpm install --frozen-lockfile --prod && \
+RUN pnpm install --frozen-lockfile && \
     npm rebuild sharp && \
     npx prisma generate
 
