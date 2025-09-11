@@ -418,6 +418,7 @@ export class PropertyRepository {
       country?: string;
       latitude?: number | Prisma.Decimal;
       longitude?: number | Prisma.Decimal;
+      imageUrl?: string;
       status?: PropertyStatus;
     },
   ): Promise<Property> {
