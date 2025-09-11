@@ -73,13 +73,13 @@ model User {
   lastLogin         DateTime?  @map("last_login") @db.Timestamptz(6)
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime   @default(now()) @map("updated_at") @db.Timestamptz(6)
-  
+
   // Invitation system fields
   isPlaceholder     Boolean    @default(false) @map("is_placeholder")
   invitationToken   String?    @unique @map("invitation_token")
   invitedById       Int?       @map("invited_by_id")
   expiresAt         DateTime?  @map("expires_at") @db.Timestamptz(6)
-  
+
   // Relations
   properties        Property[]
   invitedBy         User?      @relation("UserInvitations", fields: [invitedById], references: [id])
@@ -101,12 +101,13 @@ model Property {
   latitude          Decimal         @db.Decimal(10, 7)
   longitude         Decimal         @db.Decimal(10, 7)
   status            PropertyStatus
+  imageUrl          String?         @map("image_url") 
   incidentCount     Int             @default(0) @map("incident_count")
   openIncidentCount Int             @default(0) @map("open_incident_count")
   lastIncidentAt    DateTime?       @map("last_incident_at") @db.Timestamptz(6)
   createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime        @default(now()) @map("updated_at") @db.Timestamptz(6)
-  
+
   // Relations
   incidents         Incident[]
   inspections       Inspection[]
@@ -128,7 +129,7 @@ model Inspection {
   inspectionDate DateTime        @map("inspection_date") @db.Timestamptz(6)
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime        @default(now()) @map("updated_at") @db.Timestamptz(6)
-  
+
   // Relations
   property       Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   photos         PropertyImage[]
@@ -148,7 +149,7 @@ model PropertySpace {
   confidenceScore Decimal?           @map("confidence_score") @db.Decimal(5, 4)
   createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
-  
+
   // Relations
   images          PropertyImage[]
   property        Property           @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -166,7 +167,7 @@ model SpaceObjectLabel {
   confidence Decimal       @map("confidence_score") @db.Decimal(5, 4)
   category   String?
   createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  
+
   // Relations
   space      PropertySpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
 
@@ -188,7 +189,7 @@ model PropertyImage {
   metadata        Json?
   spaceId         Int?               @map("space_id")
   incidentId      Int?               @map("incident_id")
-  
+
   // Relations
   detectedChanges ImageChange[]
   objectLabels    ImageObjectLabel[]
@@ -211,7 +212,7 @@ model ImageSimilarity {
   comparedImageId Int           @map("compared_image_id")
   similarityScore Decimal       @map("similarity_score") @db.Decimal(5, 4)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  
+
   // Relations
   baseImage       PropertyImage @relation("BaseImage", fields: [baseImageId], references: [id], onDelete: Cascade)
   comparedImage   PropertyImage @relation("ComparedImage", fields: [comparedImageId], references: [id], onDelete: Cascade)
@@ -233,7 +234,7 @@ model ImageChange {
   verified        Boolean       @default(false)
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
-  
+
   // Relations
   image           PropertyImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
@@ -251,7 +252,7 @@ model ImageObjectLabel {
   category    String?
   boundingBox Json?         @map("bounding_box")
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  
+
   // Relations
   image       PropertyImage @relation(fields: [imageId], references: [id], onDelete: Cascade)
 
@@ -276,7 +277,7 @@ model Incident {
   featureVector   Json?                 @map("feature_vector")
   spaceType       SpaceType?            @map("space_type")
   labeledImageUrl String?               @map("labeled_image_url")
-  
+
   // Relations
   objectLabels    IncidentObjectLabel[]
   property        Property              @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -298,7 +299,7 @@ model IncidentObjectLabel {
   confidence Decimal  @map("confidence_score") @db.Decimal(5, 4)
   category   String?
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  
+
   // Relations
   incident   Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
 

@@ -28,6 +28,7 @@ export interface UpdatePropertyInput {
   country?: string;
   latitude?: number | Prisma.Decimal;
   longitude?: number | Prisma.Decimal;
+  imageUrl?: string;
   status?: PropertyStatus;
 }
 

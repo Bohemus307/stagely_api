@@ -16,6 +16,7 @@ const propertyBaseSchema = {
     country: { type: "string" },
     latitude: { type: "number" },
     longitude: { type: "number" },
+    imageUrl: { type: "string", nullable: true },
     status: {
       type: "string",
       enum: Object.values(PropertyStatus),
