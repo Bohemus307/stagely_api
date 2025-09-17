@@ -1,4 +1,14 @@
 import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
+import { DynamoDBEventRepository } from "./dynamoDB/eventsRepository";
+
+// Event types based on actual schema and user-facing activities
+export const PropertyEventTypes = {
+  // Property lifecycle events
+  PROPERTY_CREATED: "property.created",
+  PROPERTY_UPDATED: "property.updated",
+  PROPERTY_DELETED: "property.deleted",
+  PROPERTY_STATUS_CHANGED: "property.status_changed", // Active -> Maintenance -> Archived
+} as const;
 
 // Define query parameters for property listing
 export interface PropertyQueryParams {
@@ -135,17 +145,46 @@ export interface UserPropertyStats {
 }
 
 /**
- * Repository for property-related database operations
+ * Repository for property-related database operations with event logging
  */
 export class PropertyRepository {
   private prisma: PrismaClient;
+  private eventRepo: DynamoDBEventRepository | null;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: PrismaClient, eventRepo?: DynamoDBEventRepository) {
     this.prisma = prisma;
+    this.eventRepo = eventRepo || null;
+  }
+
+  /**
+   * Helper method to log events safely
+   */
+  private async logEvent(
+    eventType: string,
+    userId?: number,
+    entityId?: string,
+    entityType: string = "property",
+    metadata?: Record<string, any>,
+  ): Promise<void> {
+    if (!this.eventRepo) return;
+
+    try {
+      await this.eventRepo.saveEvent(
+        eventType,
+        userId,
+        entityId,
+        entityType,
+        metadata,
+        "property-service",
+      );
+    } catch (error) {
+      console.error("Failed to log event:", error);
+    }
   }
 
   /**
    * Get properties with pagination and filtering
+   * No event logging - viewing is not a meaningful event
    */
   async getProperties(
     params: PropertyQueryParams,
@@ -244,12 +283,7 @@ export class PropertyRepository {
 
   /**
    * Search properties by query string
-   *
-   * @param query - The search term (optional)
-   * @param userId - The ID of the user whose properties to search
-   * @param page - Page number
-   * @param limit - Maximum number of results per page
-   * @returns Paginated response of properties
+   * No event logging for searches
    */
   async searchProperties(params: {
     query?: string;
@@ -322,6 +356,7 @@ export class PropertyRepository {
 
   /**
    * Get a property by ID with all relations
+   * No event logging for viewing
    */
   async getPropertyById(id: number): Promise<PropertyWithFullRelations | null> {
     const property = await this.prisma.property.findUnique({
@@ -397,12 +432,29 @@ export class PropertyRepository {
     },
     userId: number,
   ): Promise<Property> {
-    return this.prisma.property.create({
+    const property = await this.prisma.property.create({
       data: {
         ...data,
         userId,
       },
     });
+
+    // Log property creation event
+    await this.logEvent(
+      PropertyEventTypes.PROPERTY_CREATED,
+      userId,
+      property.id.toString(),
+      "property",
+      {
+        address: property.address,
+        city: property.city,
+        state: property.state,
+        country: property.country,
+        status: property.status,
+      },
+    );
+
+    return property;
   }
 
   /**
@@ -422,19 +474,113 @@ export class PropertyRepository {
       status?: PropertyStatus;
     },
   ): Promise<Property> {
-    return this.prisma.property.update({
+    // Get current property for comparison
+    const currentProperty = await this.prisma.property.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        userId: true,
+        address: true,
+      },
+    });
+
+    if (!currentProperty) {
+      throw new Error(`Property ${id} not found`);
+    }
+
+    const updatedProperty = await this.prisma.property.update({
       where: { id },
       data,
     });
+
+    // Log status changes as a special event
+    if (data.status && currentProperty.status !== data.status) {
+      await this.logEvent(
+        PropertyEventTypes.PROPERTY_STATUS_CHANGED,
+        currentProperty.userId,
+        id.toString(),
+        "property",
+        {
+          address: currentProperty.address,
+          previousStatus: currentProperty.status,
+          newStatus: data.status,
+        },
+      );
+    }
+    // Log significant updates (address, location changes)
+    else if (data.address || data.city || data.state || data.country) {
+      const changedFields = Object.keys(data).filter(
+        (key) =>
+          data[key as keyof typeof data] !== undefined && key !== "imageUrl", // Don't log image updates
+      );
+
+      await this.logEvent(
+        PropertyEventTypes.PROPERTY_UPDATED,
+        currentProperty.userId,
+        id.toString(),
+        "property",
+        {
+          address: updatedProperty.address,
+          updatedFields: changedFields,
+        },
+      );
+    }
+    // Don't log minor updates like imageUrl changes
+
+    return updatedProperty;
   }
 
   /**
    * Delete a property
    */
   async deleteProperty(id: number): Promise<Property> {
-    return this.prisma.property.delete({
+    // Get property details before deletion
+    const propertyToDelete = await this.prisma.property.findUnique({
+      where: { id },
+      select: {
+        userId: true,
+        address: true,
+        city: true,
+        status: true,
+        incidentCount: true,
+        openIncidentCount: true,
+        _count: {
+          select: {
+            spaces: true,
+            inspections: true,
+          },
+        },
+      },
+    });
+
+    if (!propertyToDelete) {
+      throw new Error(`Property ${id} not found`);
+    }
+
+    const deletedProperty = await this.prisma.property.delete({
       where: { id },
     });
+
+    // Log deletion with context about what was deleted
+    await this.logEvent(
+      PropertyEventTypes.PROPERTY_DELETED,
+      propertyToDelete.userId,
+      id.toString(),
+      "property",
+      {
+        address: propertyToDelete.address,
+        city: propertyToDelete.city,
+        hadOpenIncidents: propertyToDelete.openIncidentCount > 0,
+        stats: {
+          totalIncidents: propertyToDelete.incidentCount,
+          openIncidents: propertyToDelete.openIncidentCount,
+          spaces: propertyToDelete._count.spaces,
+          inspections: propertyToDelete._count.inspections,
+        },
+      },
+    );
+
+    return deletedProperty;
   }
 
   /**

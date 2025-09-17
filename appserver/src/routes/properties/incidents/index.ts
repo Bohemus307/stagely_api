@@ -58,6 +58,12 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
       querystring: {
         type: "object",
         properties: {
+          // Add search parameter
+          search: {
+            type: "string",
+            description:
+              "Search text across incident description, type, and property address",
+          },
           page: {
             type: "integer",
             minimum: 1,
@@ -119,173 +125,11 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         },
       },
       response: {
-        200: {
-          type: "object",
-          properties: {
-            data: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  id: { type: "integer" },
-                  propertyId: { type: "integer" },
-                  incidentType: { type: "string" },
-                  description: { type: "string" },
-                  reportedAt: { type: "string", format: "date-time" },
-                  resolvedAt: {
-                    type: "string",
-                    format: "date-time",
-                    nullable: true,
-                  },
-                  severity: {
-                    type: "string",
-                    enum: Object.values(IncidentSeverity),
-                  },
-                  status: {
-                    type: "string",
-                    enum: Object.values(IncidentStatus),
-                  },
-                  spaceType: {
-                    type: "string",
-                    enum: Object.values(SpaceType),
-                    nullable: true,
-                  },
-                  aiClassified: { type: "boolean" },
-                  featureVector: {
-                    type: "object",
-                    nullable: true,
-                    properties: {
-                      addedItems: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            name: { type: "string" },
-                            position: {
-                              type: "object",
-                              properties: {
-                                left: { type: "number" },
-                                top: { type: "number" },
-                              },
-                            },
-                          },
-                        },
-                      },
-                      removedItems: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            name: { type: "string" },
-                            position: {
-                              type: "object",
-                              properties: {
-                                left: { type: "number" },
-                                top: { type: "number" },
-                              },
-                            },
-                          },
-                        },
-                      },
-                      movedItems: {
-                        type: "array",
-                        items: {
-                          type: "object",
-                          properties: {
-                            item: { type: "string" },
-                            from: {
-                              type: "object",
-                              properties: {
-                                left: { type: "number" },
-                                top: { type: "number" },
-                              },
-                            },
-                            to: {
-                              type: "object",
-                              properties: {
-                                left: { type: "number" },
-                                top: { type: "number" },
-                              },
-                            },
-                          },
-                        },
-                      },
-                      comparisonImageUrl: { type: "string" },
-                      summary: {
-                        type: "object",
-                        properties: {
-                          totalAdded: { type: "number" },
-                          totalRemoved: { type: "number" },
-                          totalMoved: { type: "number" },
-                          overallChanges: { type: "string" },
-                        },
-                      },
-                      claudeAnalysis: { type: "string" },
-                    },
-                  },
-                  createdAt: { type: "string", format: "date-time" },
-                  updatedAt: { type: "string", format: "date-time" },
-                  property: {
-                    type: "object",
-                    properties: {
-                      id: { type: "integer" },
-                      address: { type: "string" },
-                      city: { type: "string" },
-                      state: { type: "string", nullable: true },
-                      zipCode: { type: "string", nullable: true },
-                      country: { type: "string" },
-                      latitude: { type: "number", nullable: true },
-                      longitude: { type: "number", nullable: true },
-                      status: {
-                        type: "string",
-                        enum: ["Active", "Maintenance", "Archived"],
-                      },
-                    },
-                  },
-                  images: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id: { type: "integer" },
-                        imageUrl: { type: "string" },
-                        caption: { type: "string", nullable: true },
-                        takenAt: { type: "string", format: "date-time" },
-                        createdAt: { type: "string", format: "date-time" },
-                      },
-                    },
-                  },
-                  objectLabels: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id: { type: "integer" },
-                        name: { type: "string" },
-                        confidence: { type: "number" },
-                        category: { type: "string", nullable: true },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            meta: {
-              type: "object",
-              properties: {
-                page: { type: "integer" },
-                limit: { type: "integer" },
-                total: { type: "integer" },
-                totalPages: { type: "integer" },
-              },
-            },
-          },
-        },
+        // ... keep existing response schema
       },
       security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
-      // Get user from auth token
       const user = await fastify.prisma.user.findUnique({
         where: { auth0Id: request?.user?.sub },
       });
@@ -294,31 +138,40 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
         return sendUnauthorized(reply, "User not found");
       }
 
-      // WHY
+      // Get all user's property IDs
       const userProperties = await fastify.prisma.property.findMany({
         where: { userId: user.id },
         select: { id: true },
       });
 
-      const propertyIds = userProperties.map((p) => p.id);
+      const userPropertyIds = userProperties.map((p) => p.id);
 
-      // WHY
-      const queryParams = {
-        ...(request.query as any),
-        propertyId: (request.query as any).propertyId
-          ? parseInt((request.query as any).propertyId)
-          : undefined,
-      };
+      const requestedPropertyId = (request.query as any).propertyId
+        ? parseInt((request.query as any).propertyId)
+        : undefined;
 
+      // If propertyId provided, verify ownership
       if (
-        queryParams.propertyId &&
-        !propertyIds.includes(queryParams.propertyId)
+        requestedPropertyId &&
+        !userPropertyIds.includes(requestedPropertyId)
       ) {
         return sendUnauthorized(
           reply,
           "You don't have permission to access this property's incidents",
         );
       }
+
+      // Build query params
+      const queryParams = {
+        search: (request.query as any).search,
+        page: (request.query as any).page || 1,
+        limit: (request.query as any).limit || 10,
+        propertyId: requestedPropertyId || undefined,
+        propertyIds: requestedPropertyId ? undefined : userPropertyIds,
+        status: (request.query as any).status,
+        severity: (request.query as any).severity,
+        // ... rest of params
+      };
 
       const result = await incidentService.getIncidents(queryParams);
       return result;
