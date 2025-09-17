@@ -13,6 +13,7 @@ import StaticObjectStorageStack from "../cdk/StaticObjectStorageStack";
 import { DataStack } from "../cdk/DataStack";
 import { MessagingStack } from '../cdk/MessagingStack';
 import { EmailStack } from '../cdk/EmailStack';
+import { EventsStack } from "../cdk/EventsStack";
 
 const app = new cdk.App();
 
@@ -31,17 +32,22 @@ new ComputeStack(app, `${APP_NAME}-Infrastructure`, {
   env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION },
 });
 
-// Create the new MessagingStack
-const messagingStack = new MessagingStack(app, `${APP_NAME}-Messaging`, {
+
+new MessagingStack(app, `${APP_NAME}-Messaging`, {
   deploymentEnv: deploymentEnv,
   env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION }
 });
 
-const emailStack = new EmailStack(app, `${APP_NAME}-Email`, {
+new EmailStack(app, `${APP_NAME}-Email`, {
   deploymentEnv: deploymentEnv,
   domain: HOSTED_ZONE_NAME,
   hostedZoneId: HOSTED_ZONE_NAME,
   env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION }
+});
+
+new EventsStack(app, `${APP_NAME}-Events`, {
+  deploymentEnv: deploymentEnv,
+  env: { account: ACCOUNT_ID, region: RESOURCE_DEPLOYMENT_REGION },
 });
 // Add dependencies to ensure correct deployment order
 computeStack.addDependency(dataStack);

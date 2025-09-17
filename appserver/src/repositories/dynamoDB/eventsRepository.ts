@@ -5,7 +5,6 @@ import {
   QueryCommand,
   BatchWriteCommand,
   UpdateCommand,
-  ScanCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { TableNames } from "../../config/dynamoTables";
 

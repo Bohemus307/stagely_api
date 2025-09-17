@@ -15,7 +15,7 @@ export const TableNames = {
   MESSAGES: "stagely-messages",
   CONNECTIONS: "stagely-connections",
   MESSAGE_READ_RECEIPTS: "stagely-message-read-receipts",
-  EVENTS: "events",
+  EVENTS: "stagely-events",
   EVENT_AGGREGATIONS: "event-aggregations",
 };
 
