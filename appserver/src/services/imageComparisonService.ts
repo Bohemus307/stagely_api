@@ -23,7 +23,6 @@ const CLAUDE_MODEL_OPTIONS = {
 const CLAUDE_MODEL_ID =
   process.env.CLAUDE_MODEL_ID || CLAUDE_MODEL_OPTIONS.sonnetV1;
 
-// Types
 export interface DetectedItem {
   name: string;
   position: {
@@ -88,53 +87,100 @@ export async function analyzeWithClaude(
   sourceBuffer: Buffer,
   targetBuffer: Buffer,
 ): Promise<ClaudeComparisonResult> {
-  // Convert images to base64
-  const sourceBase64 = sourceBuffer.toString("base64");
-  const targetBase64 = targetBuffer.toString("base64");
-
-  // Resize images if they're too large (Claude has limits)
   const maxSize = 1568; // Max dimension for Claude
-  const sourceMetadata = await sharp(sourceBuffer).metadata();
-  const targetMetadata = await sharp(targetBuffer).metadata();
 
-  let processedSourceBase64 = sourceBase64;
-  let processedTargetBase64 = targetBase64;
+  // Helper function to safely process image with Sharp
+  async function processImage(
+    buffer: Buffer,
+    imageName: string,
+  ): Promise<string> {
+    try {
+      // Try to get metadata and resize if needed
+      const metadata = await sharp(buffer).metadata();
+      console.log(`${imageName} metadata:`, {
+        width: metadata.width,
+        height: metadata.height,
+        format: metadata.format,
+      });
 
-  if (sourceMetadata.width! > maxSize || sourceMetadata.height! > maxSize) {
-    const resized = await sharp(sourceBuffer)
-      .resize(maxSize, maxSize, { fit: "inside" })
-      .toBuffer();
-    processedSourceBase64 = resized.toString("base64");
+      // If image is too large, resize it
+      if (metadata.width! > maxSize || metadata.height! > maxSize) {
+        console.log(
+          `${imageName} needs resizing from ${metadata.width}x${metadata.height}`,
+        );
+        const resized = await sharp(buffer)
+          .resize(maxSize, maxSize, { fit: "inside" })
+          .jpeg() // Convert to JPEG during resize
+          .toBuffer();
+        return resized.toString("base64");
+      }
+
+      // If size is OK, just return base64
+      return buffer.toString("base64");
+    } catch (error: any) {
+      // Check if it's a HEIC/HEIF error
+      if (
+        error.message.includes("heif") ||
+        error.message.includes("heic") ||
+        error.message.includes("No decoding plugin") ||
+        error.message.includes("bad seek to")
+      ) {
+        console.warn(
+          `${imageName} appears to be HEIC/HEIF, sending without resize`,
+        );
+
+        // Check file size - warn if it's very large
+        const sizeMB = buffer.length / (1024 * 1024);
+        if (sizeMB > 5) {
+          console.warn(
+            `Warning: ${imageName} is ${sizeMB.toFixed(2)}MB - may hit Claude's limits`,
+          );
+        }
+
+        // Return original buffer as base64 without processing
+        return buffer.toString("base64");
+      }
+
+      // If it's not a HEIC error, throw it
+      console.error(`Failed to process ${imageName}:`, error);
+      throw error;
+    }
   }
 
-  if (targetMetadata.width! > maxSize || targetMetadata.height! > maxSize) {
-    const resized = await sharp(targetBuffer)
-      .resize(maxSize, maxSize, { fit: "inside" })
-      .toBuffer();
-    processedTargetBase64 = resized.toString("base64");
-  }
+  // Process both images
+  const [processedSourceBase64, processedTargetBase64] = await Promise.all([
+    processImage(sourceBuffer, "source image"),
+    processImage(targetBuffer, "target image"),
+  ]);
 
-  const prompt = `Compare these two room images. Look for furniture and large objects only.
+  console.log("Images processed, sending to Claude...");
 
-Return ONLY a JSON object (no other text) with this exact structure:
-{
-  "added_items": [
-    {"name": "item", "position": {"left": 0-100, "top": 0-100}}
-  ],
-  "removed_items": [
-    {"name": "item", "position": {"left": 0-100, "top": 0-100}}
-  ],
-  "moved_items": [
-    {"item": "name", "from": {"left": 0-100, "top": 0-100}, "to": {"left": 0-100, "top": 0-100}}
-  ],
-  "damaged_items": [
-    {"name": "item", "position": {"left": 0-100, "top": 0-100}}
-  ],
-  "overall_changes": "two sentence summary"
-}
+  // Rest of your Claude API call remains the same
+  const prompt = `Compare these two room images and identify what changed.
 
-Focus on: furniture, appliances, large decor (ignore small items under 1ft).
-Positions are percentages from top-left corner.`;
+    First image = BEFORE (reference state)
+    Second image = AFTER (current state)
+
+    Focus on furniture, appliances, and large items only.
+    Ignore: small items under 1ft, lighting changes, shadows, camera angles, people.
+
+    Return ONLY this JSON:
+    {
+      "added_items": [
+        {"name": "item name", "position": {"left": 0-100, "top": 0-100}}
+      ],
+      "removed_items": [
+        {"name": "item name", "position": {"left": 0-100, "top": 0-100}}
+      ],
+      "moved_items": [
+        {"item": "name", "from": {"left": 0-100, "top": 0-100}, "to": {"left": 0-100, "top": 0-100}}
+      ],
+      "overall_changes": "One sentence summary. Say 'No significant changes' if rooms look the same."
+    }
+
+    Positions are percentages from top-left corner.
+    Be specific with names (e.g. "wooden chair" not just "chair").
+    Only report changes you're confident about.`;
 
   try {
     console.log(`Using Claude model: ${CLAUDE_MODEL_ID}`);
@@ -146,8 +192,8 @@ Positions are percentages from top-left corner.`;
         accept: "application/json",
         body: JSON.stringify({
           anthropic_version: "bedrock-2023-05-31",
-          max_tokens: 1024, // Reduced for simpler responses (saves tokens)
-          temperature: 0, // Deterministic responses
+          max_tokens: 1024,
+          temperature: 0,
           messages: [
             {
               role: "user",
@@ -188,19 +234,14 @@ Positions are percentages from top-left corner.`;
     );
 
     const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-    // Extract the JSON from Claude's response
     const content = responseBody.content[0].text;
 
-    // Try to parse the JSON response
     try {
-      const result = JSON.parse(content);
-      return result;
+      return JSON.parse(content);
     } catch (parseError) {
-      // If parsing fails, try to extract JSON from the response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as ClaudeComparisonResult;
+        return JSON.parse(jsonMatch[0]);
       }
       throw new Error("Failed to parse Claude's response as JSON");
     }
