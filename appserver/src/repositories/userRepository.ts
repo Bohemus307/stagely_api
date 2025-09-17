@@ -4,7 +4,6 @@ import { PrismaClient, User, Property } from "@prisma/client";
 export interface UserQueryParams {
   page?: number;
   limit?: number;
-  role?: string;
   search?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
@@ -66,7 +65,6 @@ export class UserRepository {
   async getUsers({
     page = 1,
     limit = 10,
-    role,
     search,
     sortBy = "createdAt",
     sortOrder = "desc",
@@ -75,7 +73,6 @@ export class UserRepository {
 
     // Build where conditions
     const where: any = {};
-    if (role) where.role = role;
     if (search) {
       where.OR = [
         { firstName: { contains: search, mode: "insensitive" } },
@@ -299,6 +296,21 @@ export class UserRepository {
   }
 
   /**
+ * Get multiple users by their IDs
+ * @param ids - Array of user IDs to retrieve
+ * @returns Array of found users
+ */
+async getUsersByIds(ids: number[]): Promise<User[]> {
+  if (!ids.length) return [];
+
+  return this.prisma.user.findMany({
+    where: {
+      id: { in: ids }
+    }
+  });
+}
+
+  /**
    * Check if email exists for another user
    */
   async isEmailTaken(email: string, excludeUserId?: number): Promise<boolean> {
@@ -342,4 +354,146 @@ export class UserRepository {
       take: limit,
     });
   }
+
+
+
+/**
+ * Find an active user by email
+ */
+async findActiveUserByEmail(email: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      email,
+      isPlaceholder: false
+    }
+  });
+}
+
+/**
+ * Find a valid invitation (placeholder user) by email
+ */
+async findValidInvitationByEmail(email: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      email,
+      isPlaceholder: true,
+      expiresAt: {
+        gt: new Date()
+      }
+    }
+  });
+}
+
+/**
+ * Find a placeholder user by invitation token
+ */
+async findByInvitationToken(token: string): Promise<User | null> {
+  return this.prisma.user.findFirst({
+    where: {
+      invitationToken: token,
+      isPlaceholder: true,
+      expiresAt: {
+        gt: new Date()
+      }
+    }
+  });
+}
+
+/**
+ * Create a placeholder user for invitation
+ */
+async createPlaceholderUser(params: {
+  email: string;
+  invitationToken: string;
+  invitedById: number;
+  expiresAt: Date;
+}): Promise<User> {
+  return this.prisma.user.create({
+    data: {
+      email: params.email,
+      firstName: "Invited",
+      lastName: "User",
+      auth0Id: `placeholder-${params.invitationToken}`,
+      isPlaceholder: true,
+      invitationToken: params.invitationToken,
+      invitedById: params.invitedById,
+      expiresAt: params.expiresAt
+    }
+  });
+}
+
+/**
+ * Get users that have previously messaged with the given user
+ * @param participantIds - Array of user IDs from conversations
+ * @param search - Optional search query to filter users
+ * @param excludeInvited - Whether to exclude placeholder/invited users
+ * @param limit - Maximum number of results
+ */
+async getPreviouslyMessagedUsers({
+  participantIds,
+  search,
+  excludeInvited = true,
+  limit = 20
+}: {
+  participantIds: number[];
+  search?: string;
+  excludeInvited?: boolean;
+  limit?: number;
+}): Promise<Pick<User, "id" | "firstName" | "lastName" | "email" | "profilePictureUrl" | "createdAt">[]> {
+
+  if (participantIds.length === 0) {
+    return [];
+  }
+
+  const whereConditions: any = {
+    id: {
+      in: participantIds
+    }
+  };
+
+  // Add search filter if provided
+  if (search && search.trim().length >= 2) {
+    const searchTerm = search.trim();
+    whereConditions.OR = [
+      {
+        firstName: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      },
+      {
+        lastName: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      },
+      {
+        email: {
+          contains: searchTerm,
+          mode: 'insensitive'
+        }
+      }
+    ];
+  }
+
+  if (excludeInvited) {
+    whereConditions.isPlaceholder = false;
+  }
+
+  return this.prisma.user.findMany({
+    where: whereConditions,
+    take: limit,
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      profilePictureUrl: true,
+      createdAt: true
+    },
+    orderBy: {
+      firstName: 'asc'
+    }
+  });
+}
 }

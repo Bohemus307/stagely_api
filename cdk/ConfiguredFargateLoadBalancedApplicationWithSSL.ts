@@ -96,9 +96,9 @@ export class ConfiguredFargateGateway extends Construct {
       {
         cluster: this.cluster,
         listenerPort: 443,
-        memoryLimitMiB: 1024,
+        memoryLimitMiB: 2048,
         desiredCount: props.desiredCount,
-        cpu: 512,
+        cpu: 1024,
         taskImageOptions: {
           containerPort: 3000,
           image: ecs.ContainerImage.fromEcrRepository(
@@ -125,6 +125,15 @@ export class ConfiguredFargateGateway extends Construct {
         },
       }
     );
+
+    this.fargateService.targetGroup.configureHealthCheck({
+      path: "/health",
+      timeout: Duration.seconds(5),
+      interval: Duration.seconds(30),
+      healthyThresholdCount: 2,
+      unhealthyThresholdCount: 3,
+      healthyHttpCodes: "200-299",
+    });
 
     /**
      * Set the service URL and create a CloudFormation output.

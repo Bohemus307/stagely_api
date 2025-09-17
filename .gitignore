@@ -8,6 +8,13 @@ lerna-debug.log*
 .idea
 build/*
 
+# Environment variables
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
@@ -74,7 +81,9 @@ typings/
 # dotenv environment variables file
 .env
 .env.test
-
+.env.staging
+.env.production
+.env.*
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 

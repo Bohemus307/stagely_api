@@ -1,4 +1,9 @@
-import Fastify from "fastify";
+import Fastify, {
+  FastifyError,
+  FastifyReply,
+  FastifyRequest,
+  HookHandlerDoneFunction,
+} from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import cors from "@fastify/cors";
@@ -7,17 +12,13 @@ import closeWithGrace from "close-with-grace";
 import { config } from "dotenv";
 import autoLoad from "@fastify/autoload";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
 import healthPlugin from "./plugins/healthPlugin";
-
-declare module "fastify" {
-  export interface FastifyInstance {
-    prisma: PrismaClient;
-  }
-  interface FastifyRequest {
-    startTime: [number, number];
-  }
-}
+import prismaPlugin from "./plugins/prismaPlugin";
+import auth0Plugin from "./plugins/auth0Plugin";
+import s3Plugin from "./plugins/s3Plugin";
+import dynamoDB from "./plugins/dynamoDB";
+import emailPlugin from "./plugins/emailPlugin";
+import inviteRoutes from "./routes/users/invite";
 
 // Load environment variables from .env file
 config();
@@ -28,6 +29,8 @@ const serverConfig = {
   NODE_ENV: process.env.NODE_ENV || "development",
   CORS_ORIGIN: process.env.CORS_ORIGIN || "*",
   RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX || "100", 10),
+  DOMAIN: `${process.env.AUTH0_DOMAIN}`,
+  AUDIENCE: process.env.AUTH0_AUDIENCE,
 };
 
 const server = Fastify({
@@ -48,7 +51,7 @@ const server = Fastify({
   trustProxy: true, // Trust proxies for proper client IP detection
   disableRequestLogging: false, // Enable request logging
   ignoreTrailingSlash: true, // Handle routes with or without trailing slash
-  connectionTimeout: 30000, // Connection timeout in ms
+  connectionTimeout: 120000, // Connection timeout in ms
   maxParamLength: 100, // Prevent excessive parameter length
 });
 
@@ -61,32 +64,34 @@ interface ErrorResponse {
 }
 
 // Global error handler
-server.setErrorHandler((error, request, reply) => {
-  request.log.error(error);
+server.setErrorHandler(
+  (error: FastifyError, request: FastifyRequest, reply: FastifyReply) => {
+    request.log.error(error);
 
-  // Don't expose error details in production
-  const isProduction = serverConfig.NODE_ENV === "production";
+    // Don't expose error details in production
+    const isProduction = serverConfig.NODE_ENV === "production";
 
-  const statusCode = error.statusCode || 500;
+    const statusCode = error.statusCode || 500;
 
-  const response: ErrorResponse = {
-    error: {
-      statusCode,
-      message:
-        isProduction && statusCode === 500
-          ? "Internal Server Error"
-          : error.message,
-    },
-  };
+    const response: ErrorResponse = {
+      error: {
+        statusCode,
+        message:
+          isProduction && statusCode === 500
+            ? "Internal Server Error"
+            : error.message,
+      },
+    };
 
-  if (!isProduction) {
-    response.error.stack = error.stack;
-  }
+    if (!isProduction) {
+      response.error.stack = error.stack;
+    }
 
-  reply.status(statusCode).send(response);
-});
+    reply.status(statusCode).send(response);
+  },
+);
 
-server.setNotFoundHandler((request, reply) => {
+server.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
   reply.status(404).send({
     error: {
       statusCode: 404,
@@ -148,14 +153,26 @@ server.register(require("@fastify/swagger"), {
         url: "https://example.com/support",
       },
     },
-    host: process.env.API_HOST || "localhost:3000",
+    host: process.env.AUTH0_DOMAIN || "localhost:3000",
     schemes: ["http", "https"],
     consumes: ["application/json"],
     produces: ["application/json"],
     tags: [
       { name: "properties", description: "Property management endpoints" },
+      { name: "incidents", description: "Incident management endpoints" },
+      {
+        name: "property-spaces",
+        description: "Property Spaces management endpoints",
+      },
+      {
+        name: "compare-images",
+        description: "Compare property images using LLM inference",
+      },
       { name: "system", description: "System health and diagnostics" },
+      { name: "s3", description: "Image Url management" },
       { name: "users", description: "Creation and management of users" },
+      { name: "messaging", description: "Creation and management of messages" },
+      { name: "invite", description: "Invite new Users" },
     ],
     securityDefinitions: {
       bearerAuth: {
@@ -163,7 +180,7 @@ server.register(require("@fastify/swagger"), {
         name: "Authorization",
         in: "header",
         description:
-          'Enter the token with the `Bearer: ` prefix, e.g. "Bearer abcde12345".',
+          'Enter the auth0 access token with the `Bearer: ` prefix, e.g. "Bearer abcde12345"',
       },
     },
     security: [
@@ -171,10 +188,6 @@ server.register(require("@fastify/swagger"), {
         bearerAuth: [],
       },
     ],
-    externalDocs: {
-      description: "Find more info here",
-      url: "https://example.com/api-docs",
-    },
   },
   exposeRoute: true,
 });
@@ -190,32 +203,57 @@ server.register(require("@fastify/swagger-ui"), {
   transformStaticCSP: (header: any) => header,
 });
 
+server.register(prismaPlugin);
 server.register(healthPlugin);
+server.register(s3Plugin);
+server.register(dynamoDB);
+server.register(emailPlugin);
+
+server.register(auth0Plugin, {
+  domain: serverConfig.DOMAIN,
+  audience: serverConfig.AUDIENCE as string,
+});
 
 server.register(autoLoad, {
   dir: path.join(__dirname, "routes"),
   dirNameRoutePrefix: true,
 });
 
+server.register(inviteRoutes, { prefix: "/users" });
+
 const start = async () => {
   try {
     // Add hooks for performance monitoring
-    server.addHook("onRequest", (request, reply, done) => {
-      request.startTime = process.hrtime();
-      done();
-    });
+    server.addHook(
+      "onRequest",
+      (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        done: HookHandlerDoneFunction,
+      ) => {
+        request.startTime = process.hrtime();
+        done();
+      },
+    );
 
-    server.addHook("onResponse", (request, reply, done) => {
-      const hrtime = process.hrtime(request.startTime);
-      const responseTime = hrtime[0] * 1e3 + hrtime[1] / 1e6;
-      request.log.info({
-        responseTime: `${responseTime.toFixed(2)}ms`,
-        status: reply.statusCode,
-        url: request.url,
-        method: request.method,
-      });
-      done();
-    });
+    server.addHook(
+      "onResponse",
+      (
+        request: FastifyRequest,
+        reply: FastifyReply,
+        done: HookHandlerDoneFunction,
+      ) => {
+        const hrtime = process.hrtime(request.startTime);
+        const responseTime = hrtime[0] * 1e3 + hrtime[1] / 1e6;
+        request.log.info({
+          responseTime: `${responseTime.toFixed(2)}ms`,
+          status: reply.statusCode,
+          url: request.url,
+          method: request.method,
+        });
+        done();
+      },
+    );
 
     // Start listening
     await server.listen({

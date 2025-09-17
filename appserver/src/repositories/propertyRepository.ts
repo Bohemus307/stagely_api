@@ -1,25 +1,129 @@
-import {
-  PrismaClient,
-  Property,
-  PropertyStatus,
-  User,
-  PropertyImage,
-  Incident,
-} from "@prisma/client";
+import { PrismaClient, Property, PropertyStatus, Prisma } from "@prisma/client";
+import { DynamoDBEventRepository } from "./dynamoDB/eventsRepository";
 
-// Define types for query parameters
+// Event types based on actual schema and user-facing activities
+export const PropertyEventTypes = {
+  // Property lifecycle events
+  PROPERTY_CREATED: "property.created",
+  PROPERTY_UPDATED: "property.updated",
+  PROPERTY_DELETED: "property.deleted",
+  PROPERTY_STATUS_CHANGED: "property.status_changed", // Active -> Maintenance -> Archived
+} as const;
+
+// Define query parameters for property listing
 export interface PropertyQueryParams {
   page?: number;
   limit?: number;
+  userId?: number;
   status?: PropertyStatus;
-  country?: string;
-  city?: string;
+  search?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
-  userId?: number;
+  country?: string;
+  city?: string;
 }
 
-// Define response types
+// Define property search parameters
+export interface PropertySearchParams {
+  query: string;
+  userId: number;
+  limit?: number;
+  status?: PropertyStatus;
+}
+
+// Define property search result type
+export interface PropertySearchResult {
+  id: number;
+  address: string;
+  city: string;
+  state: string | null;
+  country: string;
+  status: PropertyStatus;
+  incidentCount: number;
+  openIncidentCount: number;
+}
+
+// Define property search response
+export interface PropertySearchResponse {
+  results: PropertySearchResult[];
+  count: number;
+}
+
+// Define response types with relations
+export type PropertyWithRelations = Property & {
+  user: {
+    id: number;
+    firstName: string;
+    lastName: string;
+  };
+  spaces: {
+    id: number;
+    name: string | null;
+    type: string;
+  }[];
+  _count: {
+    incidents: number;
+    inspections: number;
+    spaces: number;
+  };
+};
+
+export type PropertyWithFullRelations = Property & {
+  user: {
+    id: number;
+    auth0Id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string | null;
+    profilePictureUrl: string | null;
+    lastLogin: Date | null;
+  };
+  spaces: {
+    id: number;
+    name: string | null;
+    type: string;
+    aiGenerated: boolean;
+    confidenceScore: Prisma.Decimal | null;
+    createdAt: Date;
+    updatedAt: Date;
+    images: {
+      id: number;
+      imageUrl: string;
+      caption: string | null;
+      takenAt: Date;
+    }[];
+  }[];
+  inspections: {
+    id: number;
+    title: string;
+    description: string | null;
+    inspectionDate: Date;
+    photos: {
+      id: number;
+      imageUrl: string;
+      caption: string | null;
+      takenAt: Date;
+      spaceId: number | null;
+    }[];
+  }[];
+  incidents: {
+    id: number;
+    incidentType: string;
+    description: string;
+    reportedAt: Date;
+    resolvedAt: Date | null;
+    severity: string;
+    status: string;
+    images: {
+      id: number;
+      imageUrl: string;
+      caption: string | null;
+    }[];
+  }[];
+};
+
+// Define paginated response type
 export interface PaginatedResponse<T> {
   data: T[];
   meta: {
@@ -30,113 +134,147 @@ export interface PaginatedResponse<T> {
   };
 }
 
-// Define property with included relations type
-export interface PropertyWithRelations extends Property {
-  user: Pick<User, "id" | "firstName" | "lastName">;
-  images: PropertyImage[];
-  _count: {
-    incidents: number;
-  };
-}
-
-// Define property with full relations type
-export interface PropertyWithFullRelations extends Property {
-  user: Pick<
-    User,
-    "id" | "firstName" | "lastName" | "email" | "phone" | "profilePictureUrl"
-  >;
-  images: PropertyImage[];
-  incidents: (Incident & {
-    images: {
-      id: number;
-      imageUrl: string;
-      caption: string | null;
-    }[];
-  })[];
-}
-
 // Define user property stats type
 export interface UserPropertyStats {
-  propertiesByStatus: {
-    status: PropertyStatus;
-    _count: number;
-  }[];
-  openIncidentsCount: number;
-  recentIncidents: Incident[];
+  totalProperties: number;
+  activeProperties: number;
+  maintenanceProperties: number;
+  archivedProperties: number;
+  totalIncidents: number;
+  openIncidents: number;
 }
 
 /**
- * Repository for handling Property-related database operations
+ * Repository for property-related database operations with event logging
  */
 export class PropertyRepository {
   private prisma: PrismaClient;
+  private eventRepo: DynamoDBEventRepository | null;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: PrismaClient, eventRepo?: DynamoDBEventRepository) {
     this.prisma = prisma;
+    this.eventRepo = eventRepo || null;
   }
 
   /**
-   * Get properties with pagination, filtering and sorting
+   * Helper method to log events safely
    */
-  async getProperties({
-    page = 1,
-    limit = 10,
-    status,
-    country,
-    city,
-    sortBy = "updatedAt",
-    sortOrder = "desc",
-    userId,
-  }: PropertyQueryParams): Promise<PaginatedResponse<PropertyWithRelations>> {
+  private async logEvent(
+    eventType: string,
+    userId?: number,
+    entityId?: string,
+    entityType: string = "property",
+    metadata?: Record<string, any>,
+  ): Promise<void> {
+    if (!this.eventRepo) return;
+
+    try {
+      await this.eventRepo.saveEvent(
+        eventType,
+        userId,
+        entityId,
+        entityType,
+        metadata,
+        "property-service",
+      );
+    } catch (error) {
+      console.error("Failed to log event:", error);
+    }
+  }
+
+  /**
+   * Get properties with pagination and filtering
+   * No event logging - viewing is not a meaningful event
+   */
+  async getProperties(
+    params: PropertyQueryParams,
+  ): Promise<PaginatedResponse<PropertyWithRelations>> {
+    const {
+      page = 1,
+      limit = 10,
+      userId,
+      status,
+      search,
+      sortBy = "updatedAt",
+      sortOrder = "desc",
+      country,
+      city,
+    } = params;
+
+    // Build filter conditions
+    const where: Prisma.PropertyWhereInput = {};
+
+    if (userId) {
+      where.userId = userId;
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (country) {
+      where.country = country;
+    }
+
+    if (city) {
+      where.city = city;
+    }
+
+    if (search) {
+      where.OR = [
+        { address: { contains: search, mode: "insensitive" } },
+        { city: { contains: search, mode: "insensitive" } },
+        { state: { contains: search, mode: "insensitive" } },
+        { country: { contains: search, mode: "insensitive" } },
+      ];
+    }
+
+    // Calculate pagination
     const skip = (page - 1) * limit;
 
-    // Build where conditions
-    const where: any = {};
-    if (status) where.status = status;
-    if (country) where.country = country;
-    if (city) where.city = city;
-    if (userId) where.userId = userId;
-
-    // Build sorting
+    // Build sort order
     const orderBy: any = {};
-    orderBy[sortBy] = sortOrder.toLowerCase();
+    orderBy[sortBy] = sortOrder;
 
-    const [properties, total] = await Promise.all([
-      this.prisma.property.findMany({
-        skip,
-        take: limit,
-        where,
-        orderBy,
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-            },
-          },
-          // Only include the first 3 images for preview
-          images: {
-            take: 3,
-            orderBy: {
-              createdAt: "desc",
-            },
-          },
-          _count: {
-            select: {
-              incidents: true,
-            },
+    // Execute count query for pagination metadata
+    const total = await this.prisma.property.count({ where });
+
+    // Execute main query with relations
+    const properties = await this.prisma.property.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
           },
         },
-      }),
-      this.prisma.property.count({ where }),
-    ]);
+        spaces: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+        _count: {
+          select: {
+            incidents: true,
+            inspections: true,
+            spaces: true,
+          },
+        },
+      },
+      orderBy,
+      skip,
+      take: limit,
+    });
 
     return {
-      data: properties,
+      data: properties as PropertyWithRelations[],
       meta: {
-        page: Number(page),
-        limit: Number(limit),
+        page,
+        limit,
         total,
         totalPages: Math.ceil(total / limit),
       },
@@ -144,58 +282,179 @@ export class PropertyRepository {
   }
 
   /**
-   * Get property by ID with all related data
+   * Search properties by query string
+   * No event logging for searches
    */
-  async getPropertyById(id: number): Promise<PropertyWithFullRelations> {
-    const property = await this.prisma.property.findUniqueOrThrow({
+  async searchProperties(params: {
+    query?: string;
+    userId: number;
+    page?: number;
+    limit?: number;
+  }): Promise<PaginatedResponse<any>> {
+    const { query = "", userId, page = 1, limit = 10 } = params;
+
+    // Build the where clause
+    const where: Prisma.PropertyWhereInput = {
+      userId,
+    };
+
+    // Only add search conditions if query is not empty
+    if (query.trim()) {
+      where.OR = [
+        { address: { contains: query.trim(), mode: "insensitive" } },
+        { city: { contains: query.trim(), mode: "insensitive" } },
+        { country: { contains: query.trim(), mode: "insensitive" } },
+        { state: { contains: query.trim(), mode: "insensitive" } },
+        { zipCode: { contains: query.trim(), mode: "insensitive" } },
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+
+    // Get count for pagination metadata
+    const total = await this.prisma.property.count({ where });
+
+    // Get results
+    const properties = await this.prisma.property.findMany({
+      where,
+      select: {
+        id: true,
+        address: true,
+        city: true,
+        state: true,
+        country: true,
+        status: true,
+        zipCode: true,
+        latitude: true,
+        longitude: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: {
+          select: {
+            incidents: true,
+            inspections: true,
+            spaces: true,
+          },
+        },
+      },
+      skip,
+      take: limit,
+      orderBy: [{ updatedAt: "desc" }],
+    });
+
+    return {
+      data: properties,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get a property by ID with all relations
+   * No event logging for viewing
+   */
+  async getPropertyById(id: number): Promise<PropertyWithFullRelations | null> {
+    const property = await this.prisma.property.findUnique({
       where: { id },
       include: {
         user: {
           select: {
             id: true,
+            auth0Id: true,
             firstName: true,
             lastName: true,
             email: true,
             phone: true,
             profilePictureUrl: true,
+            lastLogin: true,
           },
         },
-        images: true,
-        incidents: {
-          orderBy: {
-            reportedAt: "desc",
-          },
+        spaces: {
           include: {
-            images: true,
+            images: {
+              select: {
+                id: true,
+                imageUrl: true,
+                caption: true,
+                takenAt: true,
+              },
+            },
+          },
+        },
+        inspections: {
+          include: {
+            photos: {
+              select: {
+                id: true,
+                imageUrl: true,
+                caption: true,
+                takenAt: true,
+                spaceId: true,
+              },
+            },
+          },
+        },
+        incidents: {
+          include: {
+            images: {
+              select: {
+                id: true,
+                imageUrl: true,
+                caption: true,
+              },
+            },
           },
         },
       },
     });
 
-    return property;
+    return property as PropertyWithFullRelations | null;
   }
 
   /**
    * Create a new property
    */
   async createProperty(
-    data: Omit<
-      Property,
-      | "id"
-      | "createdAt"
-      | "updatedAt"
-      | "incidentCount"
-      | "openIncidentCount"
-      | "lastIncidentAt"
-    >,
+    data: {
+      address: string;
+      city: string;
+      state?: string | null;
+      zipCode?: string | null;
+      country: string;
+      latitude: number | Prisma.Decimal;
+      longitude: number | Prisma.Decimal;
+      status: PropertyStatus;
+    },
     userId: number,
   ): Promise<Property> {
-    return this.prisma.property.create({
+    const property = await this.prisma.property.create({
       data: {
         ...data,
         userId,
       },
     });
+
+    // Log property creation event
+    await this.logEvent(
+      PropertyEventTypes.PROPERTY_CREATED,
+      userId,
+      property.id.toString(),
+      "property",
+      {
+        address: property.address,
+        city: property.city,
+        state: property.state,
+        country: property.country,
+        status: property.status,
+      },
+    );
+
+    return property;
   }
 
   /**
@@ -203,68 +462,230 @@ export class PropertyRepository {
    */
   async updateProperty(
     id: number,
-    data: Partial<Omit<Property, "id" | "createdAt" | "updatedAt">>,
+    data: {
+      address?: string;
+      city?: string;
+      state?: string | null;
+      zipCode?: string | null;
+      country?: string;
+      latitude?: number | Prisma.Decimal;
+      longitude?: number | Prisma.Decimal;
+      imageUrl?: string;
+      status?: PropertyStatus;
+    },
   ): Promise<Property> {
-    return this.prisma.property.update({
+    // Get current property for comparison
+    const currentProperty = await this.prisma.property.findUnique({
+      where: { id },
+      select: {
+        status: true,
+        userId: true,
+        address: true,
+      },
+    });
+
+    if (!currentProperty) {
+      throw new Error(`Property ${id} not found`);
+    }
+
+    const updatedProperty = await this.prisma.property.update({
       where: { id },
       data,
     });
+
+    // Log status changes as a special event
+    if (data.status && currentProperty.status !== data.status) {
+      await this.logEvent(
+        PropertyEventTypes.PROPERTY_STATUS_CHANGED,
+        currentProperty.userId,
+        id.toString(),
+        "property",
+        {
+          address: currentProperty.address,
+          previousStatus: currentProperty.status,
+          newStatus: data.status,
+        },
+      );
+    }
+    // Log significant updates (address, location changes)
+    else if (data.address || data.city || data.state || data.country) {
+      const changedFields = Object.keys(data).filter(
+        (key) =>
+          data[key as keyof typeof data] !== undefined && key !== "imageUrl", // Don't log image updates
+      );
+
+      await this.logEvent(
+        PropertyEventTypes.PROPERTY_UPDATED,
+        currentProperty.userId,
+        id.toString(),
+        "property",
+        {
+          address: updatedProperty.address,
+          updatedFields: changedFields,
+        },
+      );
+    }
+    // Don't log minor updates like imageUrl changes
+
+    return updatedProperty;
   }
 
   /**
    * Delete a property
    */
   async deleteProperty(id: number): Promise<Property> {
-    return this.prisma.property.delete({
+    // Get property details before deletion
+    const propertyToDelete = await this.prisma.property.findUnique({
+      where: { id },
+      select: {
+        userId: true,
+        address: true,
+        city: true,
+        status: true,
+        incidentCount: true,
+        openIncidentCount: true,
+        _count: {
+          select: {
+            spaces: true,
+            inspections: true,
+          },
+        },
+      },
+    });
+
+    if (!propertyToDelete) {
+      throw new Error(`Property ${id} not found`);
+    }
+
+    const deletedProperty = await this.prisma.property.delete({
       where: { id },
     });
+
+    // Log deletion with context about what was deleted
+    await this.logEvent(
+      PropertyEventTypes.PROPERTY_DELETED,
+      propertyToDelete.userId,
+      id.toString(),
+      "property",
+      {
+        address: propertyToDelete.address,
+        city: propertyToDelete.city,
+        hadOpenIncidents: propertyToDelete.openIncidentCount > 0,
+        stats: {
+          totalIncidents: propertyToDelete.incidentCount,
+          openIncidents: propertyToDelete.openIncidentCount,
+          spaces: propertyToDelete._count.spaces,
+          inspections: propertyToDelete._count.inspections,
+        },
+      },
+    );
+
+    return deletedProperty;
   }
 
   /**
    * Get property statistics for a user
    */
   async getUserPropertyStats(userId: number): Promise<UserPropertyStats> {
-    const stats = await this.prisma.$transaction([
-      // Count properties by status
-      this.prisma.property.groupBy({
-        by: ["status"],
-        where: { userId },
-        _count: true,
-        orderBy: {
-          status: "asc",
-        },
-      }),
+    // Get total properties count
+    const totalProperties = await this.prisma.property.count({
+      where: { userId },
+    });
 
-      // Get open incidents count
-      this.prisma.incident.count({
-        where: {
-          property: { userId },
-          status: { in: ["Open", "In_Progress"] },
-        },
-      }),
+    // Get counts by status
+    const activeProperties = await this.prisma.property.count({
+      where: { userId, status: PropertyStatus.Active },
+    });
 
-      // Get recent incidents
-      this.prisma.incident.findMany({
-        where: {
-          property: { userId },
-        },
-        orderBy: { reportedAt: "desc" },
-        take: 5,
-        include: {
-          property: {
-            select: { address: true, city: true },
-          },
-        },
-      }),
-    ]);
+    const maintenanceProperties = await this.prisma.property.count({
+      where: { userId, status: PropertyStatus.Maintenance },
+    });
+
+    const archivedProperties = await this.prisma.property.count({
+      where: { userId, status: PropertyStatus.Archived },
+    });
+
+    // Get total incidents count
+    const totalIncidents = await this.prisma.incident.count({
+      where: {
+        property: { userId },
+      },
+    });
+
+    // Get open incidents count
+    const openIncidents = await this.prisma.incident.count({
+      where: {
+        property: { userId },
+        status: { in: ["Open", "In_Progress"] },
+      },
+    });
 
     return {
-      propertiesByStatus: stats[0].map((item) => ({
-        status: item.status,
-        _count: (item as any)._count,
-      })),
-      openIncidentsCount: stats[1],
-      recentIncidents: stats[2],
+      totalProperties,
+      activeProperties,
+      maintenanceProperties,
+      archivedProperties,
+      totalIncidents,
+      openIncidents,
     };
+  }
+
+  /**
+   * Get property spaces
+   */
+  async getPropertySpaces(propertyId: number) {
+    return this.prisma.propertySpace.findMany({
+      where: { propertyId },
+      include: {
+        images: {
+          select: {
+            id: true,
+            imageUrl: true,
+            caption: true,
+            takenAt: true,
+            metadata: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get property inspections
+   */
+  async getPropertyInspections(propertyId: number) {
+    return this.prisma.inspection.findMany({
+      where: { propertyId },
+      include: {
+        photos: {
+          select: {
+            id: true,
+            imageUrl: true,
+            caption: true,
+            takenAt: true,
+            spaceId: true,
+            metadata: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Get property incidents
+   */
+  async getPropertyIncidents(propertyId: number) {
+    return this.prisma.incident.findMany({
+      where: { propertyId },
+      include: {
+        images: {
+          select: {
+            id: true,
+            imageUrl: true,
+            caption: true,
+          },
+        },
+      },
+    });
   }
 }

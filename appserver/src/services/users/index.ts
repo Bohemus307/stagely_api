@@ -6,15 +6,20 @@ import {
   UserStats,
 } from "../../repositories/userRepository";
 import { NotFoundError, ConflictError } from "../../utils/errors";
+import { MessagingService } from "../messaging";
 
 /**
  * Service for handling user-related operations
  */
 export class UserService {
   private repository: UserRepository;
+  private messagingService?: MessagingService;
 
-  constructor(prisma: PrismaClient) {
+  constructor(prisma: PrismaClient, dynamoClient?: any) {
     this.repository = new UserRepository(prisma);
+    if (dynamoClient) {
+      this.messagingService = new MessagingService(prisma, dynamoClient);
+    }
   }
 
   /**
@@ -43,11 +48,31 @@ export class UserService {
   }
 
   /**
-   * Create a new user
+   * Create a new user or accept an invitation if one exists
    */
   async createUser(
     data: Omit<User, "id" | "createdAt" | "updatedAt">,
   ): Promise<User> {
+    // Check if there's an existing invitation for this email
+    const existingInvitation = await this.repository.findValidInvitationByEmail(
+      data.email,
+    );
+
+    if (existingInvitation) {
+      // Update the existing invitation instead of creating a new user
+      return this.repository.updateUser(existingInvitation.id, {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        profilePictureUrl: data.profilePictureUrl,
+        isPlaceholder: false,
+        invitationToken: null,
+        expiresAt: null,
+        // Copy any other relevant fields from data that should be updated
+      });
+    }
+
+    // No invitation exists, proceed with normal user creation
+
     // Check if email is already taken
     const emailExists = await this.repository.isEmailTaken(data.email);
     if (emailExists) {
@@ -139,5 +164,70 @@ export class UserService {
     }
 
     return this.repository.searchUsers(query, limit);
+  }
+
+    /**
+   * Get users that the current user has previously messaged
+   * @param userId - Current user ID
+   * @param search - Optional search query to filter users
+   * @param excludeInvited - Whether to exclude placeholder/invited users
+   * @param limit - Maximum number of results
+   */
+  async getPreviouslyMessagedUsers({
+    userId,
+    search,
+    excludeInvited = true,
+    limit = 20
+  }: {
+    userId: number;
+    search?: string;
+    excludeInvited?: boolean;
+    limit?: number;
+  }): Promise<{ users: any[]; total: number }> {
+
+    if (!this.messagingService) {
+      throw new Error("Messaging service not available - DynamoDB client not provided");
+    }
+
+    // Verify user exists
+    const user = await this.repository.getUserById(userId);
+    if (!user) {
+      throw new NotFoundError(`User not found: ${userId}`);
+    }
+
+    // Get all conversations for the user from DynamoDB
+    const { conversations } = await this.messagingService.getConversationsForUser(userId, 100);
+
+    if (conversations.length === 0) {
+      return { users: [], total: 0 };
+    }
+
+    // Extract unique participant IDs (excluding the current user)
+    const participantIds = new Set<number>();
+
+    conversations.forEach(conversation => {
+      conversation.participants.forEach(participantId => {
+        if (participantId !== userId) {
+          participantIds.add(participantId);
+        }
+      });
+    });
+
+    if (participantIds.size === 0) {
+      return { users: [], total: 0 };
+    }
+
+    // Use repository method to get users (following your architecture pattern)
+    const users = await this.repository.getPreviouslyMessagedUsers({
+      participantIds: Array.from(participantIds),
+      search,
+      excludeInvited,
+      limit
+    });
+
+    return {
+      users,
+      total: users.length
+    };
   }
 }

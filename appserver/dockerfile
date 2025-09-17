@@ -1,5 +1,14 @@
 # Start with a Node.js 20 Alpine image for smaller size
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
+
+RUN apk add --no-cache \
+    fontconfig \
+    ttf-liberation \
+    libheif \
+    libheif-dev \
+    vips-dev \
+    && fc-cache -f -v
+
 
 # Set working directory
 WORKDIR /app
@@ -24,7 +33,16 @@ COPY . .
 RUN pnpm run build
 
 # Create production image
-FROM node:20-alpine
+FROM node:24-alpine
+
+RUN apk add --no-cache \
+    fontconfig \
+    ttf-liberation \
+    libheif \
+    libheif-dev \
+    vips-dev \
+    && fc-cache -f -v
+
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -57,9 +75,5 @@ EXPOSE 3000
 # Switch to non-root user
 USER fastify
 
-# Set healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
-
 # Start the application with the compiled JavaScript
-CMD [ "npm", "run", "start:prod" ]
+CMD [ "npm", "run", "start:migrate:prod" ]
