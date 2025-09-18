@@ -8,7 +8,6 @@ import {
 
 /**
  * Names of all DynamoDB tables used in the messaging system
- * Note: Removed redundant USERS table - we'll use Postgres user data instead
  */
 export const TableNames = {
   CONVERSATIONS: "stagely-conversations",
@@ -21,7 +20,6 @@ export const TableNames = {
 
 /**
  * Complete table definitions for CDK deployment
- * Note: Removed redundant USERS table to avoid duplication with Postgres
  */
 export const TableDefinitions = {
   // Conversations Table

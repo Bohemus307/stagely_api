@@ -39,8 +39,12 @@ async function propertySpaceRoutes(fastify: FastifyInstance): Promise<void> {
   const propertySpaceService = new PropertySpaceService(
     fastify.prisma,
     fastify.s3,
+    fastify.dynamoDB.documentClient,
   );
-  const propertyService = new PropertyService(fastify.prisma);
+  const propertyService = new PropertyService(
+    fastify.prisma,
+    fastify.dynamoDB.documentClient,
+  );
 
   // GET /property-spaces
   fastify.route({
