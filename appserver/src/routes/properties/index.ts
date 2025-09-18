@@ -32,7 +32,10 @@ interface StatusUpdateBody {
  */
 async function propertyRoutes(fastify: FastifyInstance): Promise<void> {
   // Get service instance with Prisma
-  const propertyService = new PropertyService(fastify.prisma);
+  const propertyService = new PropertyService(
+    fastify.prisma,
+    fastify.dynamoDB.documentClient,
+  );
 
   // GET /properties/search
   fastify.route({

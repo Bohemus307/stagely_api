@@ -102,16 +102,16 @@ export interface IncidentStats {
 export class IncidentRepository {
   private prisma: PrismaClient;
   private s3: { client: S3Client; bucket: string; region: string };
-  private eventRepo: DynamoDBEventRepository | null;
+  private eventRepo: DynamoDBEventRepository;
 
   constructor(
     prisma: PrismaClient,
     s3: { client: S3Client; bucket: string; region: string },
-    eventRepo?: DynamoDBEventRepository,
+    eventRepo: DynamoDBEventRepository,
   ) {
     this.prisma = prisma;
     this.s3 = s3;
-    this.eventRepo = eventRepo || null;
+    this.eventRepo = eventRepo;
   }
 
   /**

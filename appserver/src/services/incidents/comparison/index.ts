@@ -77,59 +77,56 @@ export class IncidentClassificationService {
    */
   async getOptimizedImageFromS3(key: string): Promise<Buffer> {
     try {
-      const now = Date.now();
-
-      try {
-        const command = new GetObjectCommand({
-          Bucket: this.s3Bucket,
-          Key: key,
-          Range: "bytes=0-4194304", // First 4MB - enough for most images
-        });
-        const response = await this.s3Client.send(command);
-
-        if (response.Body) {
-          // Convert stream to buffer efficiently
-          const chunks: Buffer[] = [];
-          for await (const chunk of response.Body as any) {
-            chunks.push(Buffer.from(chunk));
-          }
-
-          const originalBuffer = Buffer.concat(chunks);
-
-          return originalBuffer;
-        }
-      } catch (rangeError) {
-        // Range request failed, fall back to full image
-        console.warn(
-          `Range request failed for ${key}, getting full image: ${rangeError}`,
-        );
-      }
-
-      // Fall back to getting the full image if needed
-      const fullCommand = new GetObjectCommand({
+      const command = new GetObjectCommand({
         Bucket: this.s3Bucket,
         Key: key,
+        Range: "bytes=0-4194304", // First 4MB - enough for most images
       });
+      const response = await this.s3Client.send(command);
 
-      const fullResponse = await this.s3Client.send(fullCommand);
+      if (response.Body) {
+        // Convert stream to buffer efficiently
+        const chunks: Buffer[] = [];
+        for await (const chunk of response.Body as any) {
+          chunks.push(Buffer.from(chunk));
+        }
 
-      if (!fullResponse.Body) {
-        throw new Error("Empty response from S3");
+        const originalBuffer = Buffer.concat(chunks);
+
+        return originalBuffer;
       }
-
-      // Convert stream to buffer
-      const fullChunks: Buffer[] = [];
-      for await (const chunk of fullResponse.Body as any) {
-        fullChunks.push(Buffer.from(chunk));
-      }
-
-      const fullBuffer = Buffer.concat(fullChunks);
-
-      return fullBuffer;
-    } catch (error) {
-      console.error("Error getting image from S3:", error);
-      throw new Error(`Failed to get image from S3: ${error}`);
+    } catch (rangeError) {
+      // Range request failed, fall back to full image
+      console.warn(
+        `Range request failed for ${key}, getting full image: ${rangeError}`,
+      );
     }
+
+    // Fall back to getting the full image if needed
+    const fullCommand = new GetObjectCommand({
+      Bucket: this.s3Bucket,
+      Key: key,
+    });
+
+    const fullResponse = await this.s3Client.send(fullCommand);
+
+    if (!fullResponse.Body) {
+      throw new Error("Empty response from S3");
+    }
+
+    // Convert stream to buffer
+    const fullChunks: Buffer[] = [];
+    for await (const chunk of fullResponse.Body as any) {
+      fullChunks.push(Buffer.from(chunk));
+    }
+
+    const fullBuffer = Buffer.concat(fullChunks);
+
+    return fullBuffer;
+  }
+  catch(error: any) {
+    console.error("Error getting image from S3:", error);
+    throw new Error(`Failed to get image from S3: ${error}`);
   }
 
   /**

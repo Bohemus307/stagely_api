@@ -17,6 +17,8 @@ import {
   ClaudeClassificationResult,
   ClaudeClassificationService,
 } from "./classification/claudeClassifier";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBEventRepository } from "../../../repositories/dynamoDB/eventsRepository";
 
 /**
  * Service for handling property space operations
@@ -28,8 +30,10 @@ export class PropertySpaceService {
   constructor(
     prisma: PrismaClient,
     s3: { client: S3Client; bucket: string; region: string },
+    dynamoDBClient: DynamoDBDocumentClient,
   ) {
-    this.repository = new PropertySpaceRepository(prisma, s3);
+    const eventRepo = new DynamoDBEventRepository(dynamoDBClient);
+    this.repository = new PropertySpaceRepository(prisma, s3, eventRepo);
     this.s3 = s3;
   }
 
