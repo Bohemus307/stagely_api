@@ -86,8 +86,22 @@ export async function analyzeWithClaude(
   bedrockClient: BedrockRuntimeClient,
   sourceBuffer: Buffer,
   targetBuffer: Buffer,
+  description?: string,
 ): Promise<ClaudeComparisonResult> {
   const maxSize = 1568; // Max dimension for Claude
+
+  // Helper function to detect HEIF/HEIC files by buffer signature
+  function isHeifFile(buffer: Buffer): boolean {
+    // Check for HEIF file signatures
+    const header = buffer.toString("ascii", 4, 12);
+    return (
+      header.includes("ftyp") &&
+      (buffer.toString("ascii", 8, 12) === "heic" ||
+        buffer.toString("ascii", 8, 12) === "mif1" ||
+        buffer.toString("ascii", 8, 12) === "msf1" ||
+        buffer.toString("ascii", 8, 12) === "hevc")
+    );
+  }
 
   // Helper function to safely process image with Sharp
   async function processImage(
@@ -95,54 +109,113 @@ export async function analyzeWithClaude(
     imageName: string,
   ): Promise<string> {
     try {
-      // Try to get metadata and resize if needed
+      // Check if it's a HEIF file first
+      const isHeif = isHeifFile(buffer);
+
+      // Get metadata
       const metadata = await sharp(buffer).metadata();
       console.log(`${imageName} metadata:`, {
         width: metadata.width,
         height: metadata.height,
         format: metadata.format,
+        isHeif: isHeif,
       });
 
-      // If image is too large, resize it
+      // Always convert HEIF/HEIC to JPEG and resize if needed
+      const format = metadata.format as string;
+      if (isHeif || format === "heif" || format === "heic") {
+        console.log(`${imageName} is HEIF/HEIC, converting to JPEG...`);
+
+        // Convert HEIF to JPEG and resize if needed
+        let sharpInstance = sharp(buffer);
+
+        if (metadata.width! > maxSize || metadata.height! > maxSize) {
+          console.log(
+            `${imageName} needs resizing from ${metadata.width}x${metadata.height}`,
+          );
+          sharpInstance = sharpInstance.resize(maxSize, maxSize, {
+            fit: "inside",
+          });
+        }
+
+        const processedBuffer = await sharpInstance
+          .jpeg({ quality: 85 }) // Good quality JPEG
+          .toBuffer();
+
+        return processedBuffer.toString("base64");
+      }
+
+      // For other formats, resize if needed
       if (metadata.width! > maxSize || metadata.height! > maxSize) {
         console.log(
           `${imageName} needs resizing from ${metadata.width}x${metadata.height}`,
         );
         const resized = await sharp(buffer)
           .resize(maxSize, maxSize, { fit: "inside" })
-          .jpeg() // Convert to JPEG during resize
+          .jpeg({ quality: 85 })
           .toBuffer();
         return resized.toString("base64");
       }
 
-      // If size is OK, just return base64
-      return buffer.toString("base64");
+      // If size is OK and not HEIF, convert to JPEG anyway for consistency
+      const processedBuffer = await sharp(buffer)
+        .jpeg({ quality: 85 })
+        .toBuffer();
+
+      return processedBuffer.toString("base64");
     } catch (error: any) {
-      // Check if it's a HEIC/HEIF error
+      console.error(`Failed to process ${imageName}:`, error);
+
+      // If Sharp fails completely, try a fallback approach for HEIF
       if (
+        error.message.includes(
+          "Input file contains unsupported image format",
+        ) ||
         error.message.includes("heif") ||
         error.message.includes("heic") ||
-        error.message.includes("No decoding plugin") ||
         error.message.includes("bad seek to")
       ) {
-        console.warn(
-          `${imageName} appears to be HEIC/HEIF, sending without resize`,
+        console.log(
+          `${imageName} format not supported by Sharp, trying HEIF conversion fallback...`,
         );
 
-        // Check file size - warn if it's very large
-        const sizeMB = buffer.length / (1024 * 1024);
-        if (sizeMB > 5) {
-          console.warn(
-            `Warning: ${imageName} is ${sizeMB.toFixed(2)}MB - may hit Claude's limits`,
+        try {
+          // Import heic-convert dynamically
+          const convert = require("heic-convert");
+
+          console.log(`Converting ${imageName} from HEIF to JPEG...`);
+          const jpegBuffer = await convert({
+            buffer: buffer,
+            format: "JPEG",
+            quality: 0.85,
+          });
+
+          // Now process the JPEG with Sharp for resizing
+          const metadata = await sharp(jpegBuffer).metadata();
+
+          if (metadata.width! > maxSize || metadata.height! > maxSize) {
+            console.log(
+              `${imageName} needs resizing from ${metadata.width}x${metadata.height}`,
+            );
+            const resized = await sharp(jpegBuffer)
+              .resize(maxSize, maxSize, { fit: "inside" })
+              .jpeg({ quality: 85 })
+              .toBuffer();
+            return resized.toString("base64");
+          }
+
+          return jpegBuffer.toString("base64");
+        } catch (fallbackError: any) {
+          console.error(
+            `HEIF conversion fallback failed for ${imageName}:`,
+            fallbackError,
+          );
+          throw new Error(
+            `Cannot process HEIF/HEIC image: ${fallbackError.message}`,
           );
         }
-
-        // Return original buffer as base64 without processing
-        return buffer.toString("base64");
       }
 
-      // If it's not a HEIC error, throw it
-      console.error(`Failed to process ${imageName}:`, error);
       throw error;
     }
   }
@@ -155,15 +228,23 @@ export async function analyzeWithClaude(
 
   console.log("Images processed, sending to Claude...");
 
-  // Rest of your Claude API call remains the same
-  const prompt = `Compare these two room images and identify what changed.
+  // Build the prompt based on whether description exists
+  let prompt = `Compare these two room images and identify what changed.
 
     First image = BEFORE (reference state)
     Second image = AFTER (current state)
 
     Focus on furniture, appliances, and large items only.
-    Ignore: small items under 1ft, lighting changes, shadows, camera angles, people.
+    Ignore: small items under 1ft, lighting changes, shadows, camera angles, people.`;
 
+  // Add the description to the prompt if it exists
+  if (description && description.trim()) {
+    prompt += `\n\n    User's description of what they noticed: "${description}"
+    
+    Please confirm or disprove the user's observations as part of your analysis. Be specific about whether what they described is accurate based on what you can see in the images.`;
+  }
+
+  prompt += `\n
     Return ONLY this JSON:
     {
       "added_items": [
@@ -175,7 +256,14 @@ export async function analyzeWithClaude(
       "moved_items": [
         {"item": "name", "from": {"left": 0-100, "top": 0-100}, "to": {"left": 0-100, "top": 0-100}}
       ],
-      "overall_changes": "One sentence summary. Say 'No significant changes' if rooms look the same."
+      "overall_changes": "3-5 sentence summary. Say 'No significant changes' if rooms look the same.`;
+
+  // Add instruction to address the user's description in the overall_changes
+  if (description && description.trim()) {
+    prompt += ` Include whether the user's observations were accurate.`;
+  }
+
+  prompt += `"
     }
 
     Positions are percentages from top-left corner.
@@ -206,7 +294,7 @@ export async function analyzeWithClaude(
                   type: "image",
                   source: {
                     type: "base64",
-                    media_type: "image/jpeg",
+                    media_type: "image/jpeg", // Always JPEG now
                     data: processedSourceBase64,
                   },
                 },
@@ -218,7 +306,7 @@ export async function analyzeWithClaude(
                   type: "image",
                   source: {
                     type: "base64",
-                    media_type: "image/jpeg",
+                    media_type: "image/jpeg", // Always JPEG now
                     data: processedTargetBase64,
                   },
                 },
@@ -294,6 +382,7 @@ export async function compareRoomImages(
   s3Region: string,
   sourceImageUrl: string,
   targetImageUrl: string,
+  description?: string,
 ): Promise<RoomComparisonResponse> {
   // Fetch both images
   const [sourceBuffer, targetBuffer] = await Promise.all([
@@ -307,6 +396,7 @@ export async function compareRoomImages(
     bedrockClient,
     sourceBuffer,
     targetBuffer,
+    description,
   );
 
   console.log("Claude analysis complete:", {

@@ -40,10 +40,15 @@ const bedrockClient = new BedrockRuntimeClient({
  * @param fastify - The Fastify instance
  */
 async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
-  const incidentService = new IncidentService(fastify.prisma, fastify.s3);
+  const incidentService = new IncidentService(
+    fastify.prisma,
+    fastify.dynamoDB.documentClient,
+    fastify.s3,
+  );
   const propertySpaceService = new PropertySpaceService(
     fastify.prisma,
     fastify.s3,
+    fastify.dynamoDB.documentClient,
   );
 
   // GET /incidents
@@ -1202,6 +1207,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
     },
     handler: async (request, reply) => {
       const incidentData = request.body as any;
+      const description = incidentData.description;
 
       try {
         // Get user by id and verify its id matches
@@ -1244,6 +1250,7 @@ async function incidentRoutes(fastify: FastifyInstance): Promise<void> {
           fastify.s3.region,
           referenceImageUrl as string,
           incidentData.images[0].imageUrl,
+          description,
         );
 
         console.log("[COMPARISON RESULT]: ", comparisonResult);

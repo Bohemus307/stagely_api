@@ -19,6 +19,8 @@ import { NotFoundError } from "../../utils/errors";
 import { S3Client } from "@aws-sdk/client-s3";
 import { S3Config } from "./comparison/comparisonTypes";
 import { ClaudeClassificationService } from "../properties/spaces/classification/claudeClassifier";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBEventRepository } from "../../repositories/dynamoDB/eventsRepository";
 
 // Define incident create/update input types with specific types
 export interface CreateIncidentInput {
@@ -62,9 +64,11 @@ export class IncidentService {
 
   constructor(
     prisma: PrismaClient,
+    dynamoDBClient: DynamoDBDocumentClient,
     s3: { client: S3Client; bucket: string; region: string },
   ) {
-    this.incidentRepo = new IncidentRepository(prisma, s3);
+    const eventRepo = new DynamoDBEventRepository(dynamoDBClient);
+    this.incidentRepo = new IncidentRepository(prisma, s3, eventRepo);
     this.s3 = s3;
     this.spaceClassificationService = new ClaudeClassificationService(s3);
 
