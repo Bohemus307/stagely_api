@@ -8,6 +8,8 @@ import {
   UserPropertyStats,
 } from "../../repositories/propertyRepository";
 import { NotFoundError } from "../../utils/errors";
+import { DynamoDBEventRepository } from "../../repositories/dynamoDB/eventsRepository";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 
 export interface CreatePropertyInput {
   address: string;
@@ -38,8 +40,9 @@ export interface UpdatePropertyInput {
 export class PropertyService {
   private propertyRepo: PropertyRepository;
 
-  constructor(prisma: PrismaClient) {
-    this.propertyRepo = new PropertyRepository(prisma);
+  constructor(prisma: PrismaClient, dynamoDBClient: DynamoDBDocumentClient) {
+    const eventRepo = new DynamoDBEventRepository(dynamoDBClient);
+    this.propertyRepo = new PropertyRepository(prisma, eventRepo);
   }
 
   /**

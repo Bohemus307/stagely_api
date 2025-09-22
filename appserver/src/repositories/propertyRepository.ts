@@ -149,11 +149,11 @@ export interface UserPropertyStats {
  */
 export class PropertyRepository {
   private prisma: PrismaClient;
-  private eventRepo: DynamoDBEventRepository | null;
+  private eventRepo: DynamoDBEventRepository;
 
-  constructor(prisma: PrismaClient, eventRepo?: DynamoDBEventRepository) {
+  constructor(prisma: PrismaClient, eventRepo: DynamoDBEventRepository) {
     this.prisma = prisma;
-    this.eventRepo = eventRepo || null;
+    this.eventRepo = eventRepo;
   }
 
   /**
