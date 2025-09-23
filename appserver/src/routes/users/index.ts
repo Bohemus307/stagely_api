@@ -336,7 +336,7 @@ fastify.route({
     const { id } = request.params as ParamsWithId;
 
     try {
-      const result = await userService.deleteUser(parseInt(id));
+      const result = await userService.softDeleteUser(parseInt(id));
       return {
         success: result.success,
         id: parseInt(id),
