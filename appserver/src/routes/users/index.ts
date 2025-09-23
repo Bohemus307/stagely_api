@@ -273,62 +273,87 @@ async function userRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   // DELETE /users/:id
-  fastify.route({
-    method: "DELETE",
-    url: "/:id",
-    onRequest: [fastify.authenticate], // Use array syntax and onRequest
-    schema: {
-      tags: ["users"],
-      description: "Delete a user",
-      summary: "Delete user",
-      params: {
+fastify.route({
+  method: "DELETE",
+  url: "/:id",
+  onRequest: [fastify.authenticate],
+  schema: {
+    tags: ["users"],
+    description: "Soft delete a user (marks as deleted and removes from Auth0)",
+    summary: "Delete user",
+    params: {
+      type: "object",
+      properties: {
+        id: { type: "string", pattern: "^\\d+$", description: "User ID" },
+      },
+      required: ["id"],
+    },
+    response: {
+      200: {
         type: "object",
         properties: {
-          id: { type: "string", pattern: "^\\d+$", description: "User ID" },
-        },
-        required: ["id"],
-      },
-      response: {
-        200: {
-          type: "object",
-          properties: {
-            success: { type: "boolean", example: true },
-            id: { type: "integer", example: 123 },
+          success: { type: "boolean", example: true },
+          id: { type: "integer", example: 123 },
+          auth0Deleted: { type: "boolean", example: true },
+          message: {
+            type: "string",
+            example: "User successfully deleted from both database and Auth0"
           },
         },
-        404: {
-          type: "object",
-          properties: {
-            error: {
-              type: "object",
-              properties: {
-                statusCode: { type: "number", example: 404 },
-                message: { type: "string", example: "User not found" },
-              },
+      },
+      404: {
+        type: "object",
+        properties: {
+          error: {
+            type: "object",
+            properties: {
+              statusCode: { type: "number", example: 404 },
+              message: { type: "string", example: "User not found" },
             },
           },
         },
       },
-      security: [
-        {
-          bearerAuth: [],
+      409: {
+        type: "object",
+        properties: {
+          error: {
+            type: "object",
+            properties: {
+              statusCode: { type: "number", example: 409 },
+              message: { type: "string", example: "User is already deleted" },
+            },
+          },
         },
-      ],
+      },
     },
-    handler: async (request, reply) => {
-      const { id } = request.params as ParamsWithId;
+    security: [
+      {
+        bearerAuth: [],
+      },
+    ],
+  },
+  handler: async (request, reply) => {
+    const { id } = request.params as ParamsWithId;
 
-      try {
-        await userService.deleteUser(parseInt(id));
-        return { success: true, id: parseInt(id) };
-      } catch (err) {
-        if (err instanceof NotFoundError) {
-          return sendNotFound(reply, "User not found");
-        }
-        throw err;
+    try {
+      const result = await userService.deleteUser(parseInt(id));
+      return {
+        success: result.success,
+        id: parseInt(id),
+        auth0Deleted: result.auth0Deleted,
+        message: result.message,
+      };
+    } catch (err) {
+      if (err instanceof NotFoundError) {
+        return sendNotFound(reply, "User not found");
       }
-    },
-  });
+      if (err instanceof ConflictError) {
+        return sendConflict(reply, err.message);
+      }
+      throw err;
+    }
+  },
+});
 
   // GET /users/search
   fastify.route({

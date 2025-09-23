@@ -7,6 +7,7 @@ import {
 } from "../../repositories/userRepository";
 import { NotFoundError, ConflictError } from "../../utils/errors";
 import { MessagingService } from "../messaging";
+import { Auth0Service } from "../auth0";
 
 /**
  * Service for handling user-related operations
@@ -14,12 +15,14 @@ import { MessagingService } from "../messaging";
 export class UserService {
   private repository: UserRepository;
   private messagingService?: MessagingService;
+  private auth0Service: Auth0Service;
 
   constructor(prisma: PrismaClient, dynamoClient?: any) {
     this.repository = new UserRepository(prisma);
     if (dynamoClient) {
       this.messagingService = new MessagingService(prisma, dynamoClient);
     }
+    this.auth0Service = new Auth0Service();
   }
 
   /**
@@ -112,16 +115,66 @@ export class UserService {
   }
 
   /**
-   * Delete a user
+   * Soft delete a user - marks as deleted and removes from Auth0
+   * ENHANCED: Now includes Auth0 deletion
    */
-  async deleteUser(id: number): Promise<User> {
-    // Check if user exists
-    await this.repository.getUserById(id).catch(() => {
-      throw new NotFoundError("User not found");
+  async softDeleteUser(id: number): Promise<{
+    success: boolean;
+    user: User;
+    auth0Deleted: boolean;
+    message: string;
+  }> {
+    // Check if user exists and not already deleted
+    const user = await this.repository.getUserById(id);
+
+    if (user.isDeleted) {
+      throw new ConflictError("User is already deleted");
+    }
+
+    let auth0Deleted = false;
+    let auth0Error: string | null = null;
+
+    // Try to delete from Auth0 first
+    try {
+      await this.auth0Service.deleteUser(user.auth0Id);
+      auth0Deleted = true;
+    } catch (error) {
+      console.error(`Failed to delete user ${id} from Auth0:`, error);
+      auth0Error = error instanceof Error ? error.message : 'Unknown Auth0 error';
+
+      // Continue with soft delete even if Auth0 deletion fails
+      // This ensures compliance data is preserved
+    }
+
+    // Perform soft delete in database
+    const deletedUser = await this.repository.updateUser(id, {
+      isDeleted: true,
+
     });
 
-    return this.repository.deleteUser(id);
+    return {
+      success: true,
+      user: deletedUser,
+      auth0Deleted,
+      message: auth0Deleted
+        ? "User successfully deleted from both database and Auth0"
+        : `User soft deleted from database. Auth0 deletion failed: ${auth0Error}`,
+    };
   }
+  /**
+   * Delete a user - now redirects to enhanced soft delete
+   * UPDATED: Now returns the enhanced response
+   */
+  async deleteUser(id: number): Promise<{
+    success: boolean;
+    user: User;
+    auth0Deleted: boolean;
+    message: string;
+  }> {
+    return this.softDeleteUser(id);
+  }
+
+
 
   /**
    * Update user's last login timestamp
