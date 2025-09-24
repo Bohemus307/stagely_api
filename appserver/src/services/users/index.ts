@@ -17,6 +17,7 @@ export class UserService {
   private messagingService?: MessagingService;
   private auth0Service: Auth0Service;
 
+
   constructor(prisma: PrismaClient, dynamoClient?: any) {
     this.repository = new UserRepository(prisma);
     if (dynamoClient) {
@@ -25,6 +26,10 @@ export class UserService {
     this.auth0Service = new Auth0Service();
   }
 
+  private isValidAuth0Id(auth0Id: string): boolean {
+  const auth0UserIdPattern = /^[a-zA-Z0-9\-_]+\|[a-zA-Z0-9]+$/;
+  return auth0UserIdPattern.test(auth0Id);
+}
   /**
    * Get users with pagination, filtering and sorting
    */
@@ -115,8 +120,7 @@ export class UserService {
   }
 
   /**
-   * Soft delete a user - marks as deleted and removes from Auth0
-   * ENHANCED: Now includes Auth0 deletion
+   * Soft delete a user
    */
   async softDeleteUser(id: number): Promise<{
     success: boolean;
@@ -124,7 +128,7 @@ export class UserService {
     auth0Deleted: boolean;
     message: string;
   }> {
-    // Check if user exists and not already deleted
+
     const user = await this.repository.getUserById(id);
 
     if (user.isDeleted) {
@@ -134,19 +138,18 @@ export class UserService {
     let auth0Deleted = false;
     let auth0Error: string | null = null;
 
-    // Try to delete from Auth0 first
+    if (this.isValidAuth0Id(user.auth0Id)) {
     try {
       await this.auth0Service.deleteUser(user.auth0Id);
       auth0Deleted = true;
     } catch (error) {
       console.error(`Failed to delete user ${id} from Auth0:`, error);
       auth0Error = error instanceof Error ? error.message : 'Unknown Auth0 error';
-
-      // Continue with soft delete even if Auth0 deletion fails
-      // This ensures compliance data is preserved
     }
+  } else {
+    console.log(`Skipping Auth0 deletion for test user with invalid ID: ${user.auth0Id}`);
+  }
 
-    // Perform soft delete in database
     const deletedUser = await this.repository.updateUser(id, {
       isDeleted: true,
 
@@ -158,12 +161,11 @@ export class UserService {
       auth0Deleted,
       message: auth0Deleted
         ? "User successfully deleted from both database and Auth0"
-        : `User soft deleted from database. Auth0 deletion failed: ${auth0Error}`,
+        : "User deactivated in database. Auth0 user remains but cannot access system (or test user with no Auth0 account).",
     };
   }
   /**
    * Delete a user - now redirects to enhanced soft delete
-   * UPDATED: Now returns the enhanced response
    */
   async deleteUser(id: number): Promise<{
     success: boolean;

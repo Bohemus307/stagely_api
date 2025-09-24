@@ -1,4 +1,3 @@
-// src/services/auth0.ts
 import { ManagementClient } from 'auth0';
 
 export class Auth0Service {
