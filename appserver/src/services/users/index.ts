@@ -26,10 +26,6 @@ export class UserService {
     this.auth0Service = new Auth0Service();
   }
 
-  private isValidAuth0Id(auth0Id: string): boolean {
-  const auth0UserIdPattern = /^[a-zA-Z0-9\-_]+\|[a-zA-Z0-9]+$/;
-  return auth0UserIdPattern.test(auth0Id);
-}
   /**
    * Get users with pagination, filtering and sorting
    */
@@ -119,62 +115,42 @@ export class UserService {
     return this.repository.updateUser(id, data);
   }
 
-  /**
-   * Soft delete a user
-   */
-  async softDeleteUser(id: number): Promise<{
-    success: boolean;
-    user: User;
-    auth0Deleted: boolean;
-    message: string;
-  }> {
+ /**
+ * Delete a user (soft delete)
+ */
+async deleteUser(id: number): Promise<{
+  success: boolean;
+  user: User;
+  auth0Deleted: boolean;
+  message: string;
+}> {
+  const user = await this.repository.getUserById(id);
 
-    const user = await this.repository.getUserById(id);
+  let auth0Deleted = false;
 
-    if (user.isDeleted) {
-      throw new ConflictError("User is already deleted");
-    }
-
-    let auth0Deleted = false;
-    let auth0Error: string | null = null;
-
-    if (this.isValidAuth0Id(user.auth0Id)) {
-    try {
-      await this.auth0Service.deleteUser(user.auth0Id);
-      auth0Deleted = true;
-    } catch (error) {
-      console.error(`Failed to delete user ${id} from Auth0:`, error);
-      auth0Error = error instanceof Error ? error.message : 'Unknown Auth0 error';
-    }
-  } else {
-    console.log(`Skipping Auth0 deletion for test user with invalid ID: ${user.auth0Id}`);
+  // Try Auth0 deletion - let Auth0 API handle validation
+  try {
+    await this.auth0Service.deleteUser(user.auth0Id);
+    auth0Deleted = true;
+  } catch (error) {
+    console.error(`Failed to delete user ${id} from Auth0:`, error);
+    // Continue with soft delete regardless
   }
 
-    const deletedUser = await this.repository.updateUser(id, {
-      isDeleted: true,
+  // Soft delete in database
+  const deletedUser = await this.repository.updateUser(id, {
+    isDeleted: true,
+  });
 
-    });
-
-    return {
-      success: true,
-      user: deletedUser,
-      auth0Deleted,
-      message: auth0Deleted
-        ? "User successfully deleted from both database and Auth0"
-        : "User deactivated in database. Auth0 user remains but cannot access system (or test user with no Auth0 account).",
-    };
-  }
-  /**
-   * Delete a user - now redirects to enhanced soft delete
-   */
-  async deleteUser(id: number): Promise<{
-    success: boolean;
-    user: User;
-    auth0Deleted: boolean;
-    message: string;
-  }> {
-    return this.softDeleteUser(id);
-  }
+  return {
+    success: true,
+    user: deletedUser,
+    auth0Deleted,
+    message: auth0Deleted
+      ? "User successfully deleted from both database and Auth0"
+      : "User deactivated in database",
+  };
+}
 
 
 

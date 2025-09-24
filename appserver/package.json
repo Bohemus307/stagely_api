@@ -33,7 +33,6 @@
     "@fastify/swagger-ui": "^5.2.2",
     "@fastify/type-provider-typebox": "^4.1.0",
     "@prisma/client": "6.16.0",
-    "auth0": "^4.30.0",
     "aws-cdk-lib": "^2.196.0",
     "axios": "^1.12.2",
     "close-with-grace": "^2.2.0",

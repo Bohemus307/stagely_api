@@ -62,9 +62,6 @@ importers:
       '@prisma/client':
         specifier: 6.16.0
         version: 6.16.0(prisma@6.16.0(typescript@5.8.2))(typescript@5.8.2)
-      auth0:
-        specifier: ^4.30.0
-        version: 4.30.0
       aws-cdk-lib:
         specifier: ^2.196.0
         version: 2.196.0(constructs@10.4.2)
@@ -2065,10 +2062,6 @@ packages:
   atomic-sleep@1.0.0:
     resolution: {integrity: sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ==}
     engines: {node: '>=8.0.0'}
-
-  auth0@4.30.0:
-    resolution: {integrity: sha512-mDV0ojKKfNGwG/Sm06RUhHrkrA5A/dLyK7dAyZDuBMF+7n27OzyZycArmLx/aQpXXD3W+W2Vu8BcDtwBXqmi7Q==}
-    engines: {node: '>=18'}
 
   auto-bind@5.0.1:
     resolution: {integrity: sha512-ooviqdwwgfIfNmDwo94wlshcdzfO64XV0Cg6oDsDYBJfITDz1EngD2z7DkbvCWn+XIMsIqW27sEVF6qcpJrRcg==}
@@ -4278,9 +4271,6 @@ packages:
   unbox-primitive@1.1.0:
     resolution: {integrity: sha512-nWJ91DjeOkej/TA8pXQ3myruKpKEYgqvpw9lz4OPHj/NWFNluYrjbz9j01CJ8yKQd2g4jFoOkINCTW2I5LEEyw==}
     engines: {node: '>= 0.4'}
-
-  undici-types@6.20.0:
-    resolution: {integrity: sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==}
 
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
@@ -7945,12 +7935,6 @@ snapshots:
 
   atomic-sleep@1.0.0: {}
 
-  auth0@4.30.0:
-    dependencies:
-      jose: 4.15.9
-      undici-types: 6.20.0
-      uuid: 9.0.1
-
   auto-bind@5.0.1: {}
 
   available-typed-arrays@1.0.7:
@@ -10503,8 +10487,6 @@ snapshots:
       has-bigints: 1.1.0
       has-symbols: 1.1.0
       which-boxed-primitive: 1.1.1
-
-  undici-types@6.20.0: {}
 
   undici-types@6.21.0: {}
 
