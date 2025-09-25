@@ -72,7 +72,9 @@ export class UserRepository {
     const skip = (page - 1) * limit;
 
     // Build where conditions
-    const where: any = {};
+    const where: any = {
+      isDeleted: false
+    };
     if (search) {
       where.OR = [
         { firstName: { contains: search, mode: "insensitive" } },
@@ -117,8 +119,8 @@ export class UserRepository {
    * Get user by ID with all related data
    */
   async getUserById(id: number): Promise<UserWithFullRelations> {
-    const user = await this.prisma.user.findUniqueOrThrow({
-      where: { id },
+    const user = await this.prisma.user.findFirst({
+      where: { id, isDeleted: false },
       include: {
         properties: {
           include: {
@@ -132,6 +134,9 @@ export class UserRepository {
       },
     });
 
+    if (!user) {
+    throw new Error("User not found");
+  }
     return user;
   }
 
@@ -140,7 +145,7 @@ export class UserRepository {
    */
   async getUserByAuth0Id(auth0Id: string): Promise<User | null> {
     return this.prisma.user.findUnique({
-      where: { auth0Id },
+      where: { auth0Id, isDeleted: false },
     });
   }
 
@@ -148,8 +153,8 @@ export class UserRepository {
    * Get user by email
    */
   async getUserByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { email },
+    return this.prisma.user.findFirst({
+      where: { email, isDeleted: false },
     });
   }
 
@@ -305,7 +310,8 @@ async getUsersByIds(ids: number[]): Promise<User[]> {
 
   return this.prisma.user.findMany({
     where: {
-      id: { in: ids }
+      id: { in: ids },
+      isDeleted: false
     }
   });
 }
@@ -317,6 +323,7 @@ async getUsersByIds(ids: number[]): Promise<User[]> {
     const count = await this.prisma.user.count({
       where: {
         email,
+        isDeleted: false,
         ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
       },
     });
@@ -338,6 +345,7 @@ async getUsersByIds(ids: number[]): Promise<User[]> {
   > {
     return this.prisma.user.findMany({
       where: {
+        isDeleted: false,
         OR: [
           { firstName: { contains: query, mode: "insensitive" } },
           { lastName: { contains: query, mode: "insensitive" } },
@@ -364,7 +372,8 @@ async findActiveUserByEmail(email: string): Promise<User | null> {
   return this.prisma.user.findFirst({
     where: {
       email,
-      isPlaceholder: false
+      isPlaceholder: false,
+      isDeleted: false
     }
   });
 }
@@ -448,7 +457,8 @@ async getPreviouslyMessagedUsers({
   const whereConditions: any = {
     id: {
       in: participantIds
-    }
+    },
+    isDeleted: false
   };
 
   // Add search filter if provided
