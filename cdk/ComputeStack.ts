@@ -86,6 +86,16 @@ export class ComputeStack extends cdk.Stack {
           envKey: "AUTH0_DOMAIN",
           description: `auth0 domain value for ${appEnv}`,
         },
+        {
+          name: `/auth0/management-client-id-${appEnv}`,
+          envKey: "AUTH0_MANAGEMENT_CLIENT_ID",
+          description: `Auth0 Management API client ID for ${appEnv}`,
+        },
+        {
+          name: `/auth0/management-client-secret-${appEnv}`,
+          envKey: "AUTH0_MANAGEMENT_CLIENT_SECRET",
+          description: `Auth0 Management API client secret for ${appEnv}`,
+        },
       ];
     };
 

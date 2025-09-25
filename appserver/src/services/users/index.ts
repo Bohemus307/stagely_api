@@ -7,6 +7,7 @@ import {
 } from "../../repositories/userRepository";
 import { NotFoundError, ConflictError } from "../../utils/errors";
 import { MessagingService } from "../messaging";
+import { Auth0Service } from "../auth0";
 
 /**
  * Service for handling user-related operations
@@ -14,12 +15,15 @@ import { MessagingService } from "../messaging";
 export class UserService {
   private repository: UserRepository;
   private messagingService?: MessagingService;
+  private auth0Service: Auth0Service;
+
 
   constructor(prisma: PrismaClient, dynamoClient?: any) {
     this.repository = new UserRepository(prisma);
     if (dynamoClient) {
       this.messagingService = new MessagingService(prisma, dynamoClient);
     }
+    this.auth0Service = new Auth0Service();
   }
 
   /**
@@ -111,17 +115,44 @@ export class UserService {
     return this.repository.updateUser(id, data);
   }
 
-  /**
-   * Delete a user
-   */
-  async deleteUser(id: number): Promise<User> {
-    // Check if user exists
-    await this.repository.getUserById(id).catch(() => {
-      throw new NotFoundError("User not found");
-    });
+ /**
+ * Delete a user (soft delete)
+ */
+async deleteUser(id: number): Promise<{
+  success: boolean;
+  user: User;
+  auth0Deleted: boolean;
+  message: string;
+}> {
+  const user = await this.repository.getUserById(id);
 
-    return this.repository.deleteUser(id);
+  let auth0Deleted = false;
+
+  // Try Auth0 deletion - let Auth0 API handle validation
+  try {
+    await this.auth0Service.deleteUser(user.auth0Id);
+    auth0Deleted = true;
+  } catch (error) {
+    console.error(`Failed to delete user ${id} from Auth0:`, error);
+    // Continue with soft delete regardless
   }
+
+  // Soft delete in database
+  const deletedUser = await this.repository.updateUser(id, {
+    isDeleted: true,
+  });
+
+  return {
+    success: true,
+    user: deletedUser,
+    auth0Deleted,
+    message: auth0Deleted
+      ? "User successfully deleted from both database and Auth0"
+      : "User deactivated in database",
+  };
+}
+
+
 
   /**
    * Update user's last login timestamp
