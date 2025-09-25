@@ -40,7 +40,7 @@ export interface AppClusterProps {
   };
   /** Security groups to assign to the Fargate tasks */
   securityGroups?: ISecurityGroup[];
-  /** Optional subnet type for the Fargate tasks (defaults to PRIVATE_WITH_NAT) */
+  /** Optional subnet type for the Fargate tasks (defaults to PRIVATE_WITH_EGRESS) */
   taskSubnetType?: SubnetType;
 }
 
@@ -121,7 +121,7 @@ export class ConfiguredFargateGateway extends Construct {
         serviceName: `${APP_NAME}-${props.appEnv}`,
         securityGroups: props.securityGroups, // Use the provided security groups
         taskSubnets: {
-          subnetType: props.taskSubnetType || ec2.SubnetType.PRIVATE_WITH_NAT,
+          subnetType: props.taskSubnetType || ec2.SubnetType.PRIVATE_WITH_EGRESS,
         },
       }
     );

@@ -48,7 +48,7 @@ export class DataStack extends cdk.Stack {
           : ec2.InstanceSize.SMALL
       ),
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_NAT },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [dbSecurityGroup],
       allocatedStorage: props.deploymentEnv === "production" ? 50 : 20,
       maxAllocatedStorage: props.deploymentEnv === "production" ? 200 : 50,

@@ -31,7 +31,7 @@ export class MessagingStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: isProd,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
       removalPolicy: removalPolicy,
       stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
     });
@@ -63,7 +63,7 @@ export class MessagingStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: isProd,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
       removalPolicy: removalPolicy,
       stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined
     });
@@ -125,7 +125,7 @@ export class MessagingStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: isProd,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
       removalPolicy: removalPolicy
     });
 

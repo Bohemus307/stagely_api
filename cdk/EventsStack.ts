@@ -33,7 +33,7 @@ export class EventsStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING,
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: isProd,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
       removalPolicy: removalPolicy,
       stream: isProd ? dynamodb.StreamViewType.NEW_AND_OLD_IMAGES : undefined,
       timeToLiveAttribute: "ttl", // Optional: auto-delete old events
@@ -111,7 +111,7 @@ export class EventsStack extends cdk.Stack {
           type: dynamodb.AttributeType.STRING,
         },
         billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-        pointInTimeRecovery: isProd,
+        pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: isProd },
         removalPolicy: removalPolicy,
         timeToLiveAttribute: "ttl", // Auto-delete old aggregations
       }

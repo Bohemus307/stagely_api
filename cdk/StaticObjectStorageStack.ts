@@ -4,7 +4,7 @@ import { BlockPublicAccess, Bucket } from "aws-cdk-lib/aws-s3";
 import { Distribution, OriginAccessIdentity } from "aws-cdk-lib/aws-cloudfront";
 import { aws_certificatemanager as acm } from "aws-cdk-lib";
 import { ARecord, HostedZone, RecordTarget } from "aws-cdk-lib/aws-route53";
-import { S3Origin } from "aws-cdk-lib/aws-cloudfront-origins";
+import { S3BucketOrigin } from "aws-cdk-lib/aws-cloudfront-origins";
 import { CloudFrontTarget } from "aws-cdk-lib/aws-route53-targets";
 
 /**
@@ -89,7 +89,7 @@ export default class StaticObjectStorageStack extends cdk.Stack {
       certificate,
       domainNames: [publicDnsName],
       defaultBehavior: {
-        origin: new S3Origin(this.assetsBucket, {
+        origin: S3BucketOrigin.withOriginAccessIdentity(this.assetsBucket, {
           originAccessIdentity: this.oai,
         }),
       },
