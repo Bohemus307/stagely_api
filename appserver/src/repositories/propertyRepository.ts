@@ -331,6 +331,8 @@ export class PropertyRepository {
         imageUrl: true,
         createdAt: true,
         updatedAt: true,
+        incidentCount: true,
+        openIncidentCount: true,
         _count: {
           select: {
             incidents: true,
