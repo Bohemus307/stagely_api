@@ -10,6 +10,7 @@ import {
 } from "../../repositories/dynamoDB/messageRepository";
 import { NotFoundError } from "../../utils/errors";
 import { UserRepository } from "../../repositories/userRepository";
+import { v4 as uuidv4 } from "uuid";
 
 export class MessagingService {
   private readonly prisma: PrismaClient;
@@ -24,9 +25,12 @@ export class MessagingService {
     const deploymentEnv = process.env.DEPLOYMENT_ENV || "staging";
     this.conversationRepo = new DynamoDBConversationRepository(
       documentClient,
-      deploymentEnv
+      deploymentEnv,
     );
-    this.messageRepo = new DynamoDBMessageRepository(documentClient, deploymentEnv);
+    this.messageRepo = new DynamoDBMessageRepository(
+      documentClient,
+      deploymentEnv,
+    );
     this.userRepo = new UserRepository(prisma);
   }
 
@@ -39,7 +43,7 @@ export class MessagingService {
   async createConversation(
     creatorId: number,
     participants: number[],
-    initialMessage?: string
+    initialMessage?: string,
   ): Promise<{
     conversation: DynamoDBConversation;
     message?: DynamoDBMessage;
@@ -62,7 +66,7 @@ export class MessagingService {
     // Create the conversation
     const conversation = await this.conversationRepo.createConversation({
       participants,
-      conversationType: "general"
+      conversationType: "general",
     });
 
     // Send initial message if provided
@@ -71,13 +75,13 @@ export class MessagingService {
       message = await this.sendMessage(
         conversation.conversationId,
         creatorId,
-        initialMessage
+        initialMessage,
       );
     }
 
     return {
       conversation,
-      message
+      message,
     };
   }
 
@@ -90,7 +94,7 @@ export class MessagingService {
   async getConversationsForUser(
     userId: number,
     limit: number = 20,
-    lastEvaluatedKey?: any
+    lastEvaluatedKey?: any,
   ): Promise<{
     conversations: DynamoDBConversation[];
     lastEvaluatedKey?: any;
@@ -104,7 +108,7 @@ export class MessagingService {
     return this.conversationRepo.getConversationsForUser(
       userId,
       limit,
-      lastEvaluatedKey
+      lastEvaluatedKey,
     );
   }
 
@@ -115,9 +119,10 @@ export class MessagingService {
    */
   async getConversationById(
     conversationId: string,
-    userId: number
+    userId: number,
   ): Promise<DynamoDBConversation> {
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    const conversation =
+      await this.conversationRepo.getConversationById(conversationId);
 
     if (!conversation) {
       throw new NotFoundError(`Conversation not found: ${conversationId}`);
@@ -140,10 +145,11 @@ export class MessagingService {
   async sendMessage(
     conversationId: string,
     senderId: number,
-    text: string
+    text: string,
   ): Promise<DynamoDBMessage> {
     // Get conversation and verify sender is a participant
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    const conversation =
+      await this.conversationRepo.getConversationById(conversationId);
     if (!conversation) {
       throw new NotFoundError(`Conversation not found: ${conversationId}`);
     }
@@ -157,14 +163,14 @@ export class MessagingService {
       conversationId,
       senderId,
       text,
-      conversation.participants
+      conversation.participants,
     );
 
     // Update conversation with new message info
     await this.conversationRepo.updateWithNewMessage(
       conversationId,
       senderId,
-      text
+      text,
     );
 
     return message;
@@ -181,13 +187,14 @@ export class MessagingService {
     conversationId: string,
     userId: number,
     limit: number = 20,
-    lastEvaluatedKey?: any
+    lastEvaluatedKey?: any,
   ): Promise<{
     messages: DynamoDBMessage[];
     lastEvaluatedKey?: any;
   }> {
     // Get conversation and verify user is a participant
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    const conversation =
+      await this.conversationRepo.getConversationById(conversationId);
     if (!conversation) {
       throw new NotFoundError(`Conversation not found: ${conversationId}`);
     }
@@ -203,7 +210,7 @@ export class MessagingService {
     return this.messageRepo.getMessagesForConversation(
       conversationId,
       limit,
-      lastEvaluatedKey
+      lastEvaluatedKey,
     );
   }
 
@@ -216,10 +223,11 @@ export class MessagingService {
   async markMessagesAsRead(
     conversationId: string,
     userId: number,
-    messageIds: string[]
+    messageIds: string[],
   ): Promise<void> {
     // Get conversation and verify user is a participant
-    const conversation = await this.conversationRepo.getConversationById(conversationId);
+    const conversation =
+      await this.conversationRepo.getConversationById(conversationId);
     if (!conversation) {
       throw new NotFoundError(`Conversation not found: ${conversationId}`);
     }
@@ -235,10 +243,145 @@ export class MessagingService {
     await this.messageRepo.batchUpdateMessageStatus(
       messageIds.map((messageId) => ({ messageId, conversationId })),
       userId,
-      "READ"
+      "READ",
     );
   }
 
+  /**
+   * Invite a user and create/find conversation
+   * This handles the complete flow: checking users, creating placeholders, sending emails, and managing conversations
+   * @param currentUserId - ID of the user sending the invitation
+   * @param email - Email address to invite
+   * @param initialMessage - Optional initial message
+   * @param emailService - Email service for sending invitations
+   */
+  async inviteAndCreateConversation(
+    currentUserId: number,
+    email: string,
+    initialMessage?: string,
+    emailService?: any,
+  ): Promise<{
+    conversation: DynamoDBConversation;
+    message?: DynamoDBMessage;
+    user: {
+      id: number;
+      email: string;
+      isPlaceholder: boolean;
+    };
+    isNewInvitation: boolean;
+    isExistingUser: boolean;
+    isAlreadyInvited: boolean;
+  }> {
+    // Get the current user for email sending
+    const currentUser = await this.userRepo.getUserById(currentUserId);
+    if (!currentUser) {
+      throw new Error(`Current user not found: ${currentUserId}`);
+    }
+
+    let user: any = null;
+    let invitationToken: string | null = null;
+    let isNewInvitation = false;
+    let isExistingUser = false;
+    let isAlreadyInvited = false;
+
+    // Check if this is an active (non-placeholder) user
+    user = await this.userRepo.findActiveUserByEmail(email);
+
+    if (user) {
+      // User is already active
+      console.log("Found active user:", {
+        userId: user.id,
+        email: user.email,
+      });
+      isExistingUser = true;
+    } else {
+      // Check for existing invitation (placeholder user)
+      user = await this.userRepo.findValidInvitationByEmail(email);
+
+      if (user) {
+        // Placeholder already exists
+        console.log("Found existing invitation:", {
+          userId: user.id,
+          email: user.email,
+          token: user.invitationToken?.substring(0, 8),
+        });
+        isAlreadyInvited = true;
+        isNewInvitation = false; // Do NOT send email again
+      } else {
+        // Create new invitation
+        invitationToken = uuidv4();
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+
+        user = await this.userRepo.createPlaceholderUser({
+          email,
+          invitationToken,
+          invitedById: currentUserId,
+          expiresAt,
+        });
+
+        isNewInvitation = true;
+
+        // Send invitation email
+        if (emailService) {
+          try {
+            await emailService.sendInvitationEmail(
+              email,
+              invitationToken,
+              `${currentUser.firstName} ${currentUser.lastName}`,
+            );
+          } catch (error: any) {
+            console.error("Failed to send invitation email:", {
+              error: error.message,
+              code: error.code,
+              email,
+            });
+            // Continue even if email fails
+          }
+        }
+      }
+    }
+
+    //  Find or create conversation
+    let conversation: DynamoDBConversation;
+
+    // Try to find existing conversation between these two users
+    const existingConversation =
+      await this.conversationRepo.findConversationByParticipants([
+        currentUserId,
+        user.id,
+      ]);
+
+    if (existingConversation) {
+      conversation = existingConversation;
+    } else {
+      const result = await this.createConversation(currentUserId, [user.id]);
+      conversation = result.conversation;
+    }
+
+    // Send initial message if provided
+    let message: DynamoDBMessage | undefined;
+    if (initialMessage) {
+      message = await this.sendMessage(
+        conversation.conversationId,
+        currentUserId,
+        initialMessage,
+      );
+    }
+
+    return {
+      conversation,
+      message,
+      user: {
+        id: user.id,
+        email: user.email,
+        isPlaceholder: !!user.isPlaceholder,
+      },
+      isNewInvitation,
+      isExistingUser,
+      isAlreadyInvited,
+    };
+  }
   /**
    * Get unread message count for a user
    * @param userId - ID of the user
@@ -254,7 +397,10 @@ export class MessagingService {
     }
 
     // Get all conversations for user
-    const result = await this.conversationRepo.getConversationsForUser(userId, 100);
+    const result = await this.conversationRepo.getConversationsForUser(
+      userId,
+      100,
+    );
 
     // Count unread messages
     let totalUnread = 0;
@@ -270,14 +416,14 @@ export class MessagingService {
           conversationId: conversation.conversationId,
           unreadCount,
           lastMessageText: conversation.lastMessageText,
-          lastMessageTime: conversation.lastMessageTime
+          lastMessageTime: conversation.lastMessageTime,
         });
       }
     }
 
     return {
       unreadCount: totalUnread,
-      conversationsWithUnread
+      conversationsWithUnread,
     };
   }
 }

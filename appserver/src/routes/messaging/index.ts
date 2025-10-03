@@ -48,7 +48,7 @@ declare module "fastify" {
 async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
   const messagingService = new MessagingService(
     fastify.prisma,
-    fastify.dynamoDB.documentClient
+    fastify.dynamoDB.documentClient,
   );
 
   fastify.route({
@@ -64,20 +64,20 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user creating the conversation"
+            description: "ID of the user creating the conversation",
           },
           participants: {
             type: "array",
             items: { type: "integer" },
-            description: "User IDs of participants"
+            description: "User IDs of participants",
           },
           initialMessage: {
             type: "string",
-            description: "Initial message to send (optional)"
-          }
+            description: "Initial message to send (optional)",
+          },
         },
         required: ["userId", "participants"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: {
@@ -87,63 +87,67 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             conversation: messagingSchemas.conversationResponseSchema,
             message: {
               ...messagingSchemas.messageResponseSchema,
-              nullable: true
-            }
-          }
+              nullable: true,
+            },
+          },
         },
         401: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
-      const { userId, participants, initialMessage } = request.body as CreateConversationBody;
+        const { userId, participants, initialMessage } =
+          request.body as CreateConversationBody;
 
-      const user = await fastify.prisma.user.findUnique({
-        where: { id: userId }
-      });
-
-      if (!user || user.auth0Id !== request?.user?.sub) {
-        console.log('Auth mismatch:', {
-          userAuth0Id: user?.auth0Id,
-          tokenSub: request?.user?.sub
+        const user = await fastify.prisma.user.findUnique({
+          where: { id: userId },
         });
-        return reply.code(401).send({
+
+        if (!user || user.auth0Id !== request?.user?.sub) {
+          console.log("Auth mismatch:", {
+            userAuth0Id: user?.auth0Id,
+            tokenSub: request?.user?.sub,
+          });
+          return reply.code(401).send({
+            success: false,
+            error: "User not found or not authorized",
+          });
+        }
+
+        const result = await messagingService.createConversation(
+          user.id,
+          participants,
+          initialMessage,
+        );
+
+        return {
+          success: true,
+          conversation: result.conversation,
+          message: result.message || null,
+        };
+      } catch (err: any) {
+        console.log("=== ERROR IN CREATE CONVERSATION ===");
+        console.log("Error type:", typeof err);
+        console.log("Error constructor:", err.constructor.name);
+        console.log("Error message:", err.message);
+        console.log("Error stack:", err.stack);
+        console.log(
+          "Full error object:",
+          JSON.stringify(err, Object.getOwnPropertyNames(err)),
+        );
+
+        fastify.log.error("Create conversation error:", err);
+
+        const errorMessage = err instanceof Error ? err.message : String(err);
+
+        reply.code(500).send({
           success: false,
-          error: "User not found or not authorized"
+          error: errorMessage,
         });
       }
-
-      const result = await messagingService.createConversation(
-        user.id,
-        participants,
-        initialMessage
-      );
-
-      return {
-        success: true,
-        conversation: result.conversation,
-        message: result.message || null
-      };
-    } catch (err: any) {
-      console.log('=== ERROR IN CREATE CONVERSATION ===');
-      console.log('Error type:', typeof err);
-      console.log('Error constructor:', err.constructor.name);
-      console.log('Error message:', err.message);
-      console.log('Error stack:', err.stack);
-      console.log('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
-
-      fastify.log.error('Create conversation error:', err);
-
-      const errorMessage = err instanceof Error ? err.message : String(err);
-
-      reply.code(500).send({
-        success: false,
-        error: errorMessage
-        });
-      }
-    }
+    },
   });
 
   // Get all conversations for the current user
@@ -160,33 +164,33 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user"
+            description: "ID of the user",
           },
           limit: {
             type: "integer",
-            description: "Maximum number of conversations to return"
+            description: "Maximum number of conversations to return",
           },
           lastKey: {
             type: "string",
-            description: "Last evaluated key for pagination"
-          }
+            description: "Last evaluated key for pagination",
+          },
         },
         required: ["userId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: messagingSchemas.conversationsResponseSchema,
         401: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
         const { userId, limit, lastKey } = request.query as QueryParams;
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -196,25 +200,108 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const result = await messagingService.getConversationsForUser(
           user.id,
           limit ? parseInt(limit) : undefined,
-          lastKey ? JSON.parse(lastKey) : undefined
+          lastKey ? JSON.parse(lastKey) : undefined,
         );
 
         return {
           conversations: result.conversations,
           lastKey: result.lastEvaluatedKey
             ? JSON.stringify(result.lastEvaluatedKey)
-            : null
+            : null,
         };
       } catch (err: any) {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
+  // Invite user and create conversation (unified endpoint)
+  fastify.route({
+    method: "POST",
+    url: "/invite-and-create-conversation",
+    onRequest: [fastify.authenticate],
+    schema: {
+      tags: ["messaging"],
+      description: "Invite a user and create/find conversation in one call",
+      summary: "Invite and create conversation",
+      body: {
+        type: "object",
+        properties: {
+          userId: {
+            type: "integer",
+            description: "ID of the user sending the invitation",
+          },
+          email: {
+            type: "string",
+            format: "email",
+            description: "Email address to invite",
+          },
+          initialMessage: {
+            type: "string",
+            description: "Optional initial message to send",
+          },
+        },
+        required: ["userId", "email"],
+        additionalProperties: false,
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean", example: true },
+            conversation: { type: "object" },
+            message: { type: "object" },
+            user: {
+              type: "object",
+              properties: {
+                id: { type: "integer" },
+                email: { type: "string" },
+                isPlaceholder: { type: "boolean" },
+              },
+            },
+            isNewInvitation: { type: "boolean" },
+            isExistingUser: { type: "boolean" },
+            isAlreadyInvited: { type: "boolean" },
+          },
+        },
+      },
+      security: [{ bearerAuth: [] }],
+    },
+    handler: async (request, reply) => {
+      try {
+        const { userId, email, initialMessage } = request.body as {
+          userId: number;
+          email: string;
+          initialMessage?: string;
+        };
+
+        // Call the unified service method
+        const result = await messagingService.inviteAndCreateConversation(
+          userId,
+          email,
+          initialMessage,
+          fastify.email,
+        );
+
+        return {
+          success: true,
+          ...result,
+        };
+      } catch (error: any) {
+        fastify.log.error("Failed to invite and create conversation:", error);
+
+        const statusCode = error.message.includes("not found") ? 404 : 500;
+        return reply.code(statusCode).send({
+          success: false,
+          error: error.message || "Failed to invite and create conversation",
+        });
+      }
+    },
+  });
   // Get conversation by ID
   fastify.route({
     method: "GET",
@@ -229,37 +316,37 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
         required: ["conversationId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       querystring: {
         type: "object",
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user"
-          }
+            description: "ID of the user",
+          },
         },
         required: ["userId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            conversation: messagingSchemas.conversationResponseSchema
-          }
+            conversation: messagingSchemas.conversationResponseSchema,
+          },
         },
         401: messagingSchemas.errorResponseSchema,
         403: messagingSchemas.errorResponseSchema,
         404: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
@@ -267,7 +354,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { conversationId } = request.params as ConversationParams;
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -277,12 +364,12 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         try {
           const conversation = await messagingService.getConversationById(
             conversationId,
-            user.id
+            user.id,
           );
 
           return {
             success: true,
-            conversation
+            conversation,
           };
         } catch (err: any) {
           if (err.name === "NotFoundError") {
@@ -291,7 +378,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           if (err.message.includes("not a participant")) {
             return sendForbidden(
               reply,
-              "You don't have permission to access this conversation"
+              "You don't have permission to access this conversation",
             );
           }
           throw err;
@@ -300,10 +387,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Get messages for a conversation
@@ -320,39 +407,39 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
         required: ["conversationId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       querystring: {
         type: "object",
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user"
+            description: "ID of the user",
           },
           limit: {
             type: "integer",
-            description: "Maximum number of messages to return"
+            description: "Maximum number of messages to return",
           },
           lastKey: {
             type: "string",
-            description: "Last evaluated key for pagination"
-          }
+            description: "Last evaluated key for pagination",
+          },
         },
         required: ["userId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: messagingSchemas.messagesResponseSchema,
         401: messagingSchemas.errorResponseSchema,
         403: messagingSchemas.errorResponseSchema,
         404: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
@@ -360,7 +447,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { conversationId } = request.params as ConversationParams;
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -372,14 +459,14 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
             conversationId,
             user.id,
             limit ? parseInt(limit) : undefined,
-            lastKey ? JSON.parse(lastKey) : undefined
+            lastKey ? JSON.parse(lastKey) : undefined,
           );
 
           return {
             messages: result.messages,
             lastKey: result.lastEvaluatedKey
               ? JSON.stringify(result.lastEvaluatedKey)
-              : null
+              : null,
           };
         } catch (err: any) {
           if (err.name === "NotFoundError") {
@@ -388,7 +475,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           if (err.message.includes("not a participant")) {
             return sendForbidden(
               reply,
-              "You don't have permission to access this conversation"
+              "You don't have permission to access this conversation",
             );
           }
           throw err;
@@ -397,10 +484,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Send a message in a conversation
@@ -417,41 +504,41 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
         required: ["conversationId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       body: {
         type: "object",
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user sending the message"
+            description: "ID of the user sending the message",
           },
           text: {
             type: "string",
-            description: "Message text"
-          }
+            description: "Message text",
+          },
         },
         required: ["userId", "text"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean", example: true },
-            message: messagingSchemas.messageResponseSchema
-          }
+            message: messagingSchemas.messageResponseSchema,
+          },
         },
         401: messagingSchemas.errorResponseSchema,
         403: messagingSchemas.errorResponseSchema,
         404: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
@@ -459,7 +546,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { conversationId } = request.params as ConversationParams;
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -470,14 +557,12 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           const message = await messagingService.sendMessage(
             conversationId,
             user.id,
-            text
+            text,
           );
-
-          console.log("MESSAGE SENT:", JSON.stringify(message, null, 2));
 
           return {
             success: true,
-            message: message
+            message: message,
           };
         } catch (err: any) {
           if (err.name === "NotFoundError") {
@@ -486,7 +571,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           if (err.message.includes("not a participant")) {
             return sendForbidden(
               reply,
-              "You don't have permission to access this conversation"
+              "You don't have permission to access this conversation",
             );
           }
           throw err;
@@ -495,10 +580,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Mark messages as read
@@ -515,36 +600,36 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           conversationId: {
             type: "string",
-            description: "Conversation ID"
-          }
+            description: "Conversation ID",
+          },
         },
         required: ["conversationId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       body: {
         type: "object",
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user marking messages as read"
+            description: "ID of the user marking messages as read",
           },
           messageIds: {
             type: "array",
             items: { type: "string" },
-            description: "IDs of messages to mark as read"
-          }
+            description: "IDs of messages to mark as read",
+          },
         },
         required: ["userId", "messageIds"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: messagingSchemas.successResponseSchema,
         401: messagingSchemas.errorResponseSchema,
         403: messagingSchemas.errorResponseSchema,
         404: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
@@ -552,7 +637,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         const { conversationId } = request.params as ConversationParams;
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -563,11 +648,11 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           await messagingService.markMessagesAsRead(
             conversationId,
             user.id,
-            messageIds
+            messageIds,
           );
 
           return {
-            success: true
+            success: true,
           };
         } catch (err: any) {
           if (err.name === "NotFoundError") {
@@ -576,7 +661,7 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
           if (err.message.includes("not a participant")) {
             return sendForbidden(
               reply,
-              "You don't have permission to access this conversation"
+              "You don't have permission to access this conversation",
             );
           }
           throw err;
@@ -585,10 +670,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 
   // Get unread conversation count for user
@@ -605,25 +690,25 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         properties: {
           userId: {
             type: "integer",
-            description: "ID of the user"
-          }
+            description: "ID of the user",
+          },
         },
         required: ["userId"],
-        additionalProperties: false
+        additionalProperties: false,
       },
       response: {
         200: messagingSchemas.unreadCountResponseSchema,
         401: messagingSchemas.errorResponseSchema,
-        500: messagingSchemas.errorResponseSchema
+        500: messagingSchemas.errorResponseSchema,
       },
-      security: [{ bearerAuth: [] }]
+      security: [{ bearerAuth: [] }],
     },
     handler: async (request, reply) => {
       try {
         const { userId } = request.query as { userId: number };
 
         const user = await fastify.prisma.user.findUnique({
-          where: { id: userId }
+          where: { id: userId },
         });
 
         if (!user || user.auth0Id !== request?.user?.sub) {
@@ -637,10 +722,10 @@ async function messagingRoutes(fastify: FastifyInstance): Promise<void> {
         fastify.log.error(err);
         reply.code(500).send({
           success: false,
-          error: err.message || "An unknown error occurred"
+          error: err.message || "An unknown error occurred",
         });
       }
-    }
+    },
   });
 }
 
