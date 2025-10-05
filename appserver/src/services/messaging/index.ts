@@ -12,6 +12,8 @@ import { NotFoundError } from "../../utils/errors";
 import { UserRepository } from "../../repositories/userRepository";
 import { v4 as uuidv4 } from "uuid";
 
+type PaginationKey = Record<string, string | number> | undefined;
+
 export class MessagingService {
   private readonly prisma: PrismaClient;
   private readonly documentClient: any;
@@ -94,10 +96,10 @@ export class MessagingService {
   async getConversationsForUser(
     userId: number,
     limit: number = 20,
-    lastEvaluatedKey?: any,
+    lastEvaluatedKey?: PaginationKey,
   ): Promise<{
     conversations: DynamoDBConversation[];
-    lastEvaluatedKey?: any;
+    lastEvaluatedKey?: PaginationKey;
   }> {
     // Verify user exists
     const user = await this.userRepo.getUserById(userId);
@@ -183,14 +185,15 @@ export class MessagingService {
    * @param limit - Optional limit for pagination
    * @param lastEvaluatedKey - Optional pagination key
    */
+
   async getMessages(
     conversationId: string,
     userId: number,
     limit: number = 20,
-    lastEvaluatedKey?: any,
+    lastEvaluatedKey?: PaginationKey,
   ): Promise<{
     messages: DynamoDBMessage[];
-    lastEvaluatedKey?: any;
+    lastEvaluatedKey?: PaginationKey;
   }> {
     // Get conversation and verify user is a participant
     const conversation =
