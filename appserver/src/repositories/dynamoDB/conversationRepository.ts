@@ -39,6 +39,14 @@ export class DynamoDBConversationRepository {
   }
 
   /**
+   * Helper: Create userIds string from participants
+   * Sorting ensures [7,19] and [19,7] both become "7,19"
+   */
+  private createUserIdsString(participants: number[]): string {
+    return participants.sort((a, b) => a - b).join(",");
+  }
+
+  /**
    * Create a new conversation - MUCH SIMPLER
    */
   async createConversation(
@@ -50,7 +58,7 @@ export class DynamoDBConversationRepository {
     const conversationId = `conv_${uuidv4()}`;
     const now = Date.now();
 
-    data.participants.forEach(participantId => {
+    data.participants.forEach((participantId) => {
       this.validateParticipant(participantId);
     });
 
@@ -62,7 +70,7 @@ export class DynamoDBConversationRepository {
     const conversation: DynamoDBConversation = {
       conversationId,
       participants: data.participants,
-      userIds: data.participants.sort((a, b) => a - b).join(','), // NEW: Store as string
+      userIds: this.createUserIdsString(data.participants),
       conversationType: data.conversationType || "general",
       lastMessageText: data.lastMessageText,
       lastMessageTime: data.lastMessageTime || now,
@@ -72,13 +80,40 @@ export class DynamoDBConversationRepository {
       version: 1,
     };
 
-    await this.documentClient.send(new PutCommand({
-      TableName: this.tableName,
-      Item: conversation,
-    }));
+    await this.documentClient.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: conversation,
+      }),
+    );
 
-    console.log(`Created conversation ${conversationId} with ${data.participants.length} participants`);
     return conversation;
+  }
+
+  /**
+   * Find conversation by exact participant match
+   * Uses userIds string for efficient exact matching
+   */
+  async findConversationByParticipants(
+    participantIds: number[],
+  ): Promise<DynamoDBConversation | null> {
+    participantIds.forEach((id) => this.validateParticipant(id));
+
+    const userIdsString = this.createUserIdsString(participantIds);
+
+    const params = {
+      TableName: this.tableName,
+      FilterExpression: "userIds = :userIds",
+      ExpressionAttributeValues: {
+        ":userIds": userIdsString,
+      },
+    };
+
+    const result = await this.documentClient.send(new ScanCommand(params));
+
+    return result.Items && result.Items.length > 0
+      ? (result.Items[0] as DynamoDBConversation)
+      : null;
   }
 
   /**
@@ -113,25 +148,21 @@ export class DynamoDBConversationRepository {
 
     const params = {
       TableName: this.tableName,
-      FilterExpression: "contains(userIds, :userId)",
+      FilterExpression: "contains(participants, :userId)",
       ExpressionAttributeValues: {
-        ":userId": userIdStr,
+        ":userId": userId,
       },
-      Limit: limit * 3,
+      Limit: limit * 2, // Get more than needed to account for filtering
       ...(lastEvaluatedKey && { ExclusiveStartKey: lastEvaluatedKey }),
     };
 
     const result = await this.documentClient.send(new ScanCommand(params));
 
-    const filteredConversations = (result.Items || []).filter(item => {
-      const userIds = item.userIds?.split(',') || [];
-      return userIds.includes(userIdStr);
-    }).slice(0, limit);
-
-    console.log(`Found ${filteredConversations.length} conversations for user ${userId}`);
-
     return {
-      conversations: filteredConversations as DynamoDBConversation[],
+      conversations: (result.Items || []).slice(
+        0,
+        limit,
+      ) as DynamoDBConversation[],
       lastEvaluatedKey: result.LastEvaluatedKey,
     };
   }
@@ -180,7 +211,9 @@ export class DynamoDBConversationRepository {
       ReturnValues: ReturnValue.ALL_NEW,
     };
 
-    const result = await this.documentClient.send(new UpdateCommand(updateParams));
+    const result = await this.documentClient.send(
+      new UpdateCommand(updateParams),
+    );
     return result.Attributes as DynamoDBConversation;
   }
 
@@ -190,18 +223,20 @@ export class DynamoDBConversationRepository {
   async markAsRead(conversationId: string, userId: number): Promise<void> {
     this.validateParticipant(userId);
 
-    await this.documentClient.send(new UpdateCommand({
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression: "set unreadCount.#userId = :zero",
-      ExpressionAttributeNames: {
-        "#userId": userId.toString(),
-      },
-      ExpressionAttributeValues: {
-        ":zero": 0,
-      },
-      ConditionExpression: "attribute_exists(conversationId)",
-    }));
+    await this.documentClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { conversationId },
+        UpdateExpression: "set unreadCount.#userId = :zero",
+        ExpressionAttributeNames: {
+          "#userId": userId.toString(),
+        },
+        ExpressionAttributeValues: {
+          ":zero": 0,
+        },
+        ConditionExpression: "attribute_exists(conversationId)",
+      }),
+    );
   }
 
   /**
@@ -223,24 +258,26 @@ export class DynamoDBConversationRepository {
     }
 
     const updatedParticipants = [...conversation.participants, participantId];
-    const updatedUserIds = updatedParticipants.sort((a, b) => a - b).join(',');
     const updatedUnreadCount = {
       ...conversation.unreadCount,
       [participantId.toString()]: 0,
     };
 
-    const result = await this.documentClient.send(new UpdateCommand({
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression: "set participants = :participants, userIds = :userIds, unreadCount = :unreadCount, version = :version",
-      ExpressionAttributeValues: {
-        ":participants": updatedParticipants,
-        ":userIds": updatedUserIds,
-        ":unreadCount": updatedUnreadCount,
-        ":version": (conversation.version || 0) + 1,
-      },
-      ReturnValues: ReturnValue.ALL_NEW,
-    }));
+    const result = await this.documentClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { conversationId },
+        UpdateExpression:
+          "set participants = :participants, userIds = :userIds, unreadCount = :unreadCount, version = :version",
+        ExpressionAttributeValues: {
+          ":participants": updatedParticipants,
+          ":userIds": this.createUserIdsString(updatedParticipants),
+          ":unreadCount": updatedUnreadCount,
+          ":version": (conversation.version || 0) + 1,
+        },
+        ReturnValues: ReturnValue.ALL_NEW,
+      }),
+    );
 
     return result.Attributes as DynamoDBConversation;
   }
@@ -259,25 +296,28 @@ export class DynamoDBConversationRepository {
       throw new Error(`Conversation not found: ${conversationId}`);
     }
 
-    const updatedParticipants = conversation.participants.filter(p => p !== userId);
-    const updatedUserIds = updatedParticipants.sort((a, b) => a - b).join(',');
+    const updatedParticipants = conversation.participants.filter(
+      (p) => p !== userId,
+    );
     const updatedUnreadCount = { ...conversation.unreadCount };
     delete updatedUnreadCount[userId.toString()];
 
-    const result = await this.documentClient.send(new UpdateCommand({
-      TableName: this.tableName,
-      Key: { conversationId },
-      UpdateExpression: "set participants = :participants, userIds = :userIds, unreadCount = :unreadCount, version = :version",
-      ExpressionAttributeValues: {
-        ":participants": updatedParticipants,
-        ":userIds": updatedUserIds,
-        ":unreadCount": updatedUnreadCount,
-        ":version": (conversation.version || 0) + 1,
-      },
-      ReturnValues: ReturnValue.ALL_NEW,
-    }));
+    const result = await this.documentClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { conversationId },
+        UpdateExpression:
+          "set participants = :participants, userIds = :userIds, unreadCount = :unreadCount, version = :version",
+        ExpressionAttributeValues: {
+          ":participants": updatedParticipants,
+          ":userIds": this.createUserIdsString(updatedParticipants),
+          ":unreadCount": updatedUnreadCount,
+          ":version": (conversation.version || 0) + 1,
+        },
+        ReturnValues: ReturnValue.ALL_NEW,
+      }),
+    );
 
     return result.Attributes as DynamoDBConversation;
   }
 }
-
