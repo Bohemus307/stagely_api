@@ -328,8 +328,11 @@ export class PropertyRepository {
         zipCode: true,
         latitude: true,
         longitude: true,
+        imageUrl: true,
         createdAt: true,
         updatedAt: true,
+        incidentCount: true,
+        openIncidentCount: true,
         _count: {
           select: {
             incidents: true,
